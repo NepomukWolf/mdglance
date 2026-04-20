@@ -2,12 +2,18 @@
 
 This project should stay focused: a fast native Markdown previewer for people writing in terminal editors.
 
-## Near Term
+## Done
 
 - Vendor Mermaid locally.
   - Remove the runtime CDN dependency.
-  - Pin the Mermaid version.
   - Make diagrams work offline.
+
+## Near Term
+
+- Pin and document the vendored Mermaid version.
+  - Record the exact source URL.
+  - Prefer a reproducible update command.
+  - Keep the checked-in standalone browser bundle reviewed.
 
 - Harden Markdown rendering.
   - Escape or strip raw HTML by default.
@@ -92,4 +98,3 @@ This project should stay focused: a fast native Markdown previewer for people wr
 - Plugin systems.
 - Full browser behavior inside the preview window.
 - Turning the tool into a Markdown project manager.
-

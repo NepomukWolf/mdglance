@@ -16,6 +16,8 @@ use tao::{
 };
 use wry::WebViewBuilder;
 
+const MERMAID_JS: &str = include_str!("../assets/mermaid.min.js");
+
 #[derive(Debug, ClapParser)]
 #[command(version, about = "Open a native live preview for a Markdown file")]
 struct Args {
@@ -189,6 +191,7 @@ fn render_document(file: &Path) -> Result<String> {
     let body = render_body(file)?;
     let display_name = display_name(file);
     let title = html_escape::encode_text(&display_name);
+    let mermaid_js = js_string_literal(MERMAID_JS)?;
     let base = file
         .parent()
         .map(path_to_file_url)
@@ -231,7 +234,12 @@ fn render_document(file: &Path) -> Result<String> {
     </div>
   </div>
   <script type="module">
-    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    const mermaidSource = {mermaid_js};
+    const mermaidScript = document.createElement("script");
+    mermaidScript.text = mermaidSource;
+    document.head.appendChild(mermaidScript);
+
+    const mermaid = globalThis.mermaid;
 
     mermaid.initialize({{ startOnLoad: false, securityLevel: "loose" }});
 
@@ -500,6 +508,11 @@ fn render_document(file: &Path) -> Result<String> {
 </html>"#,
         css = CSS
     ))
+}
+
+fn js_string_literal(value: &str) -> Result<String> {
+    let json = serde_json::to_string(value)?;
+    Ok(json.replace("</", "<\\/"))
 }
 
 fn render_body(file: &Path) -> Result<String> {

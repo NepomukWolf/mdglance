@@ -19,7 +19,7 @@ Current behavior:
 - Search rendered text with keyboard controls.
 - Show keybindings in an in-app help overlay.
 
-Mermaid is currently loaded from a CDN. Do not treat this as a hardened renderer for untrusted Markdown yet.
+Mermaid is bundled into the binary at compile time from `assets/mermaid.min.js`, so diagram rendering does not require runtime network access. Do not treat this as a hardened renderer for untrusted Markdown yet.
 
 ## Usage
 
@@ -44,19 +44,19 @@ cargo build
 
 ## Keybindings
 
-| Key | Action |
-| --- | --- |
-| `j` / `k` | Scroll down / up |
-| `h` / `l` | Scroll left / right |
-| `d` / `u` | Half page down / up |
-| `Space` | Page down |
-| `g` / `G` | Top / bottom |
-| `/` | Open search |
-| `Enter` | Accept search |
+| Key       | Action                     |
+| --------- | -------------------------- |
+| `j` / `k` | Scroll down / up           |
+| `h` / `l` | Scroll left / right        |
+| `d` / `u` | Half page down / up        |
+| `Space`   | Page down                  |
+| `g` / `G` | Top / bottom               |
+| `/`       | Open search                |
+| `Enter`   | Accept search              |
 | `n` / `N` | Next / previous search hit |
-| `?` | Show help |
-| `Esc` | Close search/help |
-| `q` | Quit |
+| `?`       | Show help                  |
+| `Esc`     | Close search/help          |
+| `q`       | Quit                       |
 
 ## Mermaid
 
@@ -77,7 +77,7 @@ Before previewing untrusted Markdown, the project should harden these areas:
 
 - Strip or escape raw HTML by default.
 - Block dangerous link schemes such as `javascript:`.
-- Vendor Mermaid locally instead of loading it from a CDN.
+- Keep vendored Mermaid pinned and reviewed.
 - Keep app IPC minimal and validated.
 - Keep external sites out of the preview WebView.
 
@@ -97,4 +97,3 @@ Build:
 ```sh
 cargo build
 ```
-
