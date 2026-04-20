@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 260" role="img" aria-labelledby="title desc">
+  <title id="title">Markdown preview pipeline</title>
+  <desc id="desc">A simple pipeline from editing to saving to previewing.</desc>
+  <rect width="720" height="260" fill="#f7f7f2"/>
+  <g fill="none" stroke="#222" stroke-width="3">
+    <rect x="48" y="78" width="150" height="88" rx="8"/>
+    <rect x="285" y="78" width="150" height="88" rx="8"/>
+    <rect x="522" y="78" width="150" height="88" rx="8"/>
+    <path d="M210 122h58"/>
+    <path d="M257 111l14 11-14 11"/>
+    <path d="M447 122h58"/>
+    <path d="M494 111l14 11-14 11"/>
+  </g>
+  <g fill="#111" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" text-anchor="middle">
+    <text x="123" y="117" font-size="24" font-weight="700">Helix</text>
+    <text x="123" y="145" font-size="16">write markdown</text>
+    <text x="360" y="117" font-size="24" font-weight="700">Save</text>
+    <text x="360" y="145" font-size="16">file watcher</text>
+    <text x="597" y="117" font-size="24" font-weight="700">mdview</text>
+    <text x="597" y="145" font-size="16">render output</text>
+    <text x="360" y="224" font-size="17">Local SVG image included from examples/diagram.svg</text>
+  </g>
+</svg>
