@@ -42,7 +42,7 @@ This project should stay focused: a fast native Markdown previewer for people wr
   - Prefer an offline approach, such as Rust-side `syntect`, if it keeps startup fast.
 
 - Improve local Markdown links.
-  - Open relative `.md` links inside `mdview`.
+  - Open relative `.md` links inside `mdglance`.
   - Keep external links in the default browser.
   - Add Markdown-only back/forward history.
 

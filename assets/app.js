@@ -23,10 +23,10 @@ async function renderMermaid() {
   await mermaid.run({ nodes });
 }
 
-window.__mdviewUpdate = async function (payload) {
+window.__mdglanceUpdate = async function (payload) {
   const scrollRatio =
     window.scrollY / Math.max(1, document.body.scrollHeight - window.innerHeight);
-  document.title = "mdview - " + payload.title;
+  document.title = "mdglance - " + payload.title;
   content.innerHTML = payload.body;
   await renderMermaid();
   if (searchQuery) {
@@ -38,7 +38,7 @@ window.__mdviewUpdate = async function (payload) {
   );
 };
 
-window.__mdviewShowError = function (message) {
+window.__mdglanceShowError = function (message) {
   content.innerHTML = `<pre class="error">${message}</pre>`;
 };
 
@@ -50,7 +50,7 @@ function isTypingTarget(element) {
 }
 
 function clearSearchHighlights() {
-  for (const mark of Array.from(content.querySelectorAll("mark.mdview-search-hit"))) {
+  for (const mark of Array.from(content.querySelectorAll("mark.mdglance-search-hit"))) {
     mark.replaceWith(document.createTextNode(mark.textContent));
   }
   content.normalize();
@@ -97,7 +97,7 @@ function highlightSearch(query) {
   const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       const parent = node.parentElement;
-      if (!parent || parent.closest("script, style, mark.mdview-search-hit")) {
+      if (!parent || parent.closest("script, style, mark.mdglance-search-hit")) {
         return NodeFilter.FILTER_REJECT;
       }
       return node.nodeValue.toLocaleLowerCase().includes(needle)
@@ -124,7 +124,7 @@ function highlightSearch(query) {
       }
 
       const mark = document.createElement("mark");
-      mark.className = "mdview-search-hit";
+      mark.className = "mdglance-search-hit";
       mark.textContent = text.slice(index, index + query.length);
       fragment.append(mark);
       searchHits.push(mark);
@@ -180,6 +180,15 @@ searchInput.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("keydown", (event) => {
+  if (event.metaKey && !event.altKey) {
+    if (!event.ctrlKey && ["w", "q"].includes(event.key.toLocaleLowerCase())) {
+      event.preventDefault();
+      window.ipc.postMessage("close");
+      return;
+    }
+
+  }
+
   if (event.metaKey || event.ctrlKey || event.altKey) {
     return;
   }

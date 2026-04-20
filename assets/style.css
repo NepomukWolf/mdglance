@@ -111,13 +111,13 @@ svg {
   font: 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-.mdview-search-hit {
+.mdglance-search-hit {
   border-radius: 3px;
   background: #ffe066;
   color: #1f1f1f;
 }
 
-.mdview-search-hit.current {
+.mdglance-search-hit.current {
   background: #2f80ed;
   color: white;
 }

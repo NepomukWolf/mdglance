@@ -1,6 +1,6 @@
-# mdview Rendering Kitchen Sink
+# mdglance Rendering Kitchen Sink
 
-This file is meant to exercise the first version of `mdview`. It includes prose, headings, lists, tables, code blocks, inline code, images, blockquotes, task lists, and Mermaid diagrams.
+This file is meant to exercise the first version of `mdglance`. It includes prose, headings, lists, tables, code blocks, inline code, images, blockquotes, task lists, and Mermaid diagrams.
 
 The goal is not to be a Markdown specification test. It is a practical sample you can open while changing the renderer:
 
@@ -20,7 +20,7 @@ Another useful behavior is stable refresh. When the source file changes, the pre
 
 - Write Markdown in Helix.
 - Save the file with `:write`.
-- Let `mdview` notice the change.
+- Let `mdglance` notice the change.
 - Check the rendered output in a native window.
 - Keep the loop fast enough that previewing feels disposable.
 
@@ -70,7 +70,7 @@ Nested ordered lists:
 
 Inline code should sit comfortably inside prose. For example, the app currently accepts a single `file` argument, uses `pulldown-cmark` for Markdown parsing, and calls `evaluate_script` to update the WebView after a save.
 
-Small command names like `hx`, `cargo`, `git`, `rg`, and `mdview` should not disturb line height.
+Small command names like `hx`, `cargo`, `git`, `rg`, and `mdglance` should not disturb line height.
 
 ## Code Blocks
 
@@ -95,7 +95,7 @@ TOML:
 
 ```toml
 [package]
-name = "mdview"
+name = "mdglance"
 version = "0.1.0"
 edition = "2024"
 ```
@@ -104,7 +104,7 @@ JSON:
 
 ```json
 {
-  "viewer": "mdview",
+  "viewer": "mdglance",
   "mode": "read-only",
   "refresh": "on-save"
 }
@@ -124,7 +124,7 @@ flowchart LR
 sequenceDiagram
   participant H as Helix
   participant F as File watcher
-  participant V as mdview
+  participant V as mdglance
   H->>F: save README.md
   F->>V: reload event
   V->>V: parse and render
@@ -171,4 +171,4 @@ Here is a small checklist inside prose:
 - Keep preview output calm.
 - Prefer predictable behavior over feature sprawl.
 
-And here is a final longer paragraph to test the bottom of the page. If you edit this file while `mdview` is open, the rendered window should refresh after save and keep roughly the same scroll position. That makes it practical to work on a section halfway through a long technical document without snapping back to the top every time.
+And here is a final longer paragraph to test the bottom of the page. If you edit this file while `mdglance` is open, the rendered window should refresh after save and keep roughly the same scroll position. That makes it practical to work on a section halfway through a long technical document without snapping back to the top every time.

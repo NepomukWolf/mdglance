@@ -16,7 +16,7 @@
     <text x="123" y="145" font-size="16">write markdown</text>
     <text x="360" y="117" font-size="24" font-weight="700">Save</text>
     <text x="360" y="145" font-size="16">file watcher</text>
-    <text x="597" y="117" font-size="24" font-weight="700">mdview</text>
+    <text x="597" y="117" font-size="24" font-weight="700">mdglance</text>
     <text x="597" y="145" font-size="16">render output</text>
     <text x="360" y="224" font-size="17">Local SVG image included from examples/diagram.svg</text>
   </g>

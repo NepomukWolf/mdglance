@@ -3,8 +3,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use tao::{
     dpi::LogicalSize,
-    event::{Event as TaoEvent, WindowEvent},
+    event::{ElementState, Event as TaoEvent, KeyEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
+    keyboard::{Key, ModifiersState},
     window::WindowBuilder,
 };
 use url::Url;
@@ -33,7 +34,7 @@ pub fn run(file: PathBuf) -> Result<()> {
     let proxy = event_loop.create_proxy();
     let _watcher = watcher::watch_file(file.clone(), proxy)?;
 
-    let title = format!("mdview - {}", display_name(&file));
+    let title = format!("mdglance - {}", display_name(&file));
     let window = WindowBuilder::new()
         .with_title(title)
         .with_inner_size(LogicalSize::new(1080.0, 860.0))
@@ -45,10 +46,11 @@ pub fn run(file: PathBuf) -> Result<()> {
         .with_html(html)
         .with_ipc_handler({
             let proxy = event_loop.create_proxy();
-            move |message| {
-                if message.body() == "close" {
+            move |message| match message.body().as_str() {
+                "close" => {
                     let _ = proxy.send_event(UserEvent::Close);
                 }
+                _ => {}
             }
         })
         .with_navigation_handler({
@@ -65,6 +67,8 @@ pub fn run(file: PathBuf) -> Result<()> {
         .build(&window)
         .context("failed to create webview")?;
 
+    let mut current_modifiers = ModifiersState::empty();
+
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
 
@@ -75,7 +79,7 @@ pub fn run(file: PathBuf) -> Result<()> {
                         "title": display_name(&file),
                         "body": body,
                     });
-                    let script = format!("window.__mdviewUpdate({payload});");
+                    let script = format!("window.__mdglanceUpdate({payload});");
                     if let Err(err) = webview.evaluate_script(&script) {
                         eprintln!("failed to update preview: {err}");
                     }
@@ -84,7 +88,7 @@ pub fn run(file: PathBuf) -> Result<()> {
                     let message = err.to_string();
                     let escaped = html_escape::encode_text(&message);
                     let script = format!(
-                        "window.__mdviewShowError({});",
+                        "window.__mdglanceShowError({});",
                         serde_json::to_string(&escaped.to_string()).unwrap_or_default()
                     );
                     let _ = webview.evaluate_script(&script);
@@ -100,6 +104,41 @@ pub fn run(file: PathBuf) -> Result<()> {
                 if let Err(err) = open_external_url(&url) {
                     eprintln!("failed to open {url}: {err}");
                 }
+            }
+            TaoEvent::WindowEvent {
+                event:
+                    WindowEvent::KeyboardInput {
+                        event:
+                            KeyEvent {
+                                logical_key,
+                                state: ElementState::Pressed,
+                                ..
+                            },
+                        ..
+                    },
+                ..
+            } => match logical_key {
+                Key::Character("w") | Key::Character("W")
+                    if current_modifiers.super_key()
+                        && !current_modifiers.control_key()
+                        && !current_modifiers.alt_key() =>
+                {
+                    *control_flow = ControlFlow::Exit;
+                }
+                Key::Character("q") | Key::Character("Q")
+                    if current_modifiers.super_key()
+                        && !current_modifiers.control_key()
+                        && !current_modifiers.alt_key() =>
+                {
+                    *control_flow = ControlFlow::Exit;
+                }
+                _ => {}
+            },
+            TaoEvent::WindowEvent {
+                event: WindowEvent::ModifiersChanged(modifiers),
+                ..
+            } => {
+                current_modifiers = modifiers;
             }
             TaoEvent::WindowEvent {
                 event: WindowEvent::CloseRequested,

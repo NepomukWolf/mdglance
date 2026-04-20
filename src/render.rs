@@ -43,6 +43,7 @@ pub fn render_document(file: &Path) -> Result<String> {
         <dt>d / u</dt><dd>Half page down / up</dd>
         <dt>Space</dt><dd>Page down</dd>
         <dt>g / G</dt><dd>Top / bottom</dd>
+        <dt>Cmd-W / Cmd-Q</dt><dd>Quit</dd>
         <dt>/</dt><dd>Search</dd>
         <dt>Enter</dt><dd>Accept search</dd>
         <dt>n / N</dt><dd>Next / previous search hit</dd>

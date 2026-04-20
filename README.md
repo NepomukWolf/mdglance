@@ -1,6 +1,6 @@
-# mdview
+# mdglance
 
-`mdview` is a small native Markdown previewer for terminal-first workflows.
+`mdglance` is a small native Markdown previewer for terminal-first workflows.
 
 It opens an arbitrary Markdown file in a native macOS window, renders the document read-only, and refreshes when the source file changes. The intended loop is simple: write in a terminal editor, save, and glance at the rendered output without opening a full editor or browser workspace.
 
@@ -39,7 +39,7 @@ Build a local debug binary:
 
 ```sh
 cargo build
-./target/debug/mdview examples/render-kitchen-sink.md
+./target/debug/mdglance examples/render-kitchen-sink.md
 ```
 
 ## Keybindings
@@ -71,7 +71,7 @@ flowchart LR
 
 ## Security Notes
 
-`mdview` renders Markdown inside a native WebView. That is useful, but it also means Markdown rendering needs a clear security model.
+`mdglance` renders Markdown inside a native WebView. That is useful, but it also means Markdown rendering needs a clear security model.
 
 Before previewing untrusted Markdown, the project should harden these areas:
 
