@@ -73,6 +73,31 @@ This project should stay focused: a fast native Markdown previewer for people wr
   - Add packaging notes for macOS.
   - Consider signed binaries later.
 
+## Cross-Platform Support
+
+- Replace the macOS-specific `open` command.
+  - Use a cross-platform crate such as `open`.
+  - Test external link behavior on macOS, Windows, and Linux.
+
+- Review path and URL handling.
+  - Replace hand-built `file://` URLs with proper URL conversion.
+  - Verify Windows paths such as `C:\Users\name\file.md`.
+  - Keep local image embedding platform-neutral.
+
+- Document native WebView requirements.
+  - macOS uses WKWebView.
+  - Windows uses Edge WebView2.
+  - Linux needs WebKitGTK packages.
+
+- Add CI builds.
+  - macOS.
+  - Windows.
+  - Linux.
+
+- Update the README platform status.
+  - Current status: developed and tested on macOS.
+  - Goal: portable through Wry/Tao with documented system dependencies.
+
 ## Open Source Readiness
 
 - Add a license.
