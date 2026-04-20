@@ -177,10 +177,43 @@ fn render_document(file: &Path) -> Result<String> {
 </head>
 <body>
   <main id="content">{body}</main>
+  <div id="search-bar" class="hud hidden">
+    <span class="search-prefix">/</span>
+    <input id="search-input" autocomplete="off" spellcheck="false" aria-label="Search text">
+    <span id="search-status"></span>
+  </div>
+  <div id="help-overlay" class="help hidden">
+    <div class="help-panel">
+      <h2>Keybindings</h2>
+      <dl>
+        <dt>j / k</dt><dd>Scroll down / up</dd>
+        <dt>h / l</dt><dd>Scroll left / right</dd>
+        <dt>d / u</dt><dd>Half page down / up</dd>
+        <dt>Space</dt><dd>Page down</dd>
+        <dt>g / G</dt><dd>Top / bottom</dd>
+        <dt>/</dt><dd>Search</dd>
+        <dt>Enter</dt><dd>Accept search</dd>
+        <dt>n / N</dt><dd>Next / previous search hit</dd>
+        <dt>?</dt><dd>Show this help</dd>
+        <dt>Esc</dt><dd>Close search or help</dd>
+        <dt>q</dt><dd>Quit</dd>
+      </dl>
+    </div>
+  </div>
   <script type="module">
     import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
 
     mermaid.initialize({{ startOnLoad: false, securityLevel: "loose" }});
+
+    const content = document.getElementById("content");
+    const searchBar = document.getElementById("search-bar");
+    const searchInput = document.getElementById("search-input");
+    const searchStatus = document.getElementById("search-status");
+    const helpOverlay = document.getElementById("help-overlay");
+
+    let searchQuery = "";
+    let searchHits = [];
+    let currentHit = -1;
 
     async function renderMermaid() {{
       const nodes = document.querySelectorAll("pre.mermaid");
@@ -193,13 +226,16 @@ fn render_document(file: &Path) -> Result<String> {
     window.__mdviewUpdate = async function(payload) {{
       const scrollRatio = window.scrollY / Math.max(1, document.body.scrollHeight - window.innerHeight);
       document.title = "mdview - " + payload.title;
-      document.getElementById("content").innerHTML = payload.body;
+      content.innerHTML = payload.body;
       await renderMermaid();
+      if (searchQuery) {{
+        highlightSearch(searchQuery);
+      }}
       window.scrollTo(0, scrollRatio * Math.max(1, document.body.scrollHeight - window.innerHeight));
     }};
 
     window.__mdviewShowError = function(message) {{
-      document.getElementById("content").innerHTML = `<pre class="error">${{message}}</pre>`;
+      content.innerHTML = `<pre class="error">${{message}}</pre>`;
     }};
 
     function isTypingTarget(element) {{
@@ -209,8 +245,150 @@ fn render_document(file: &Path) -> Result<String> {
       );
     }}
 
+    function clearSearchHighlights() {{
+      for (const mark of Array.from(content.querySelectorAll("mark.mdview-search-hit"))) {{
+        mark.replaceWith(document.createTextNode(mark.textContent));
+      }}
+      content.normalize();
+      searchHits = [];
+      currentHit = -1;
+    }}
+
+    function setSearchStatus() {{
+      if (!searchQuery) {{
+        searchStatus.textContent = "";
+      }} else if (searchHits.length === 0) {{
+        searchStatus.textContent = "0";
+      }} else {{
+        searchStatus.textContent = `${{currentHit + 1}}/${{searchHits.length}}`;
+      }}
+    }}
+
+    function setCurrentHit(index) {{
+      if (searchHits.length === 0) {{
+        currentHit = -1;
+        setSearchStatus();
+        return;
+      }}
+
+      currentHit = (index + searchHits.length) % searchHits.length;
+      for (const hit of searchHits) {{
+        hit.classList.remove("current");
+      }}
+      searchHits[currentHit].classList.add("current");
+      searchHits[currentHit].scrollIntoView({{ block: "center", inline: "nearest" }});
+      setSearchStatus();
+    }}
+
+    function highlightSearch(query) {{
+      clearSearchHighlights();
+      searchQuery = query;
+
+      if (!query) {{
+        setSearchStatus();
+        return;
+      }}
+
+      const needle = query.toLocaleLowerCase();
+      const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, {{
+        acceptNode(node) {{
+          const parent = node.parentElement;
+          if (!parent || parent.closest("script, style, mark.mdview-search-hit")) {{
+            return NodeFilter.FILTER_REJECT;
+          }}
+          return node.nodeValue.toLocaleLowerCase().includes(needle)
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_REJECT;
+        }}
+      }});
+
+      const nodes = [];
+      while (walker.nextNode()) {{
+        nodes.push(walker.currentNode);
+      }}
+
+      for (const node of nodes) {{
+        const text = node.nodeValue;
+        const lower = text.toLocaleLowerCase();
+        const fragment = document.createDocumentFragment();
+        let cursor = 0;
+        let index = lower.indexOf(needle);
+
+        while (index !== -1) {{
+          if (index > cursor) {{
+            fragment.append(document.createTextNode(text.slice(cursor, index)));
+          }}
+
+          const mark = document.createElement("mark");
+          mark.className = "mdview-search-hit";
+          mark.textContent = text.slice(index, index + query.length);
+          fragment.append(mark);
+          searchHits.push(mark);
+
+          cursor = index + query.length;
+          index = lower.indexOf(needle, cursor);
+        }}
+
+        if (cursor < text.length) {{
+          fragment.append(document.createTextNode(text.slice(cursor)));
+        }}
+
+        node.replaceWith(fragment);
+      }}
+
+      setCurrentHit(0);
+    }}
+
+    function openSearch() {{
+      searchBar.classList.remove("hidden");
+      searchInput.value = searchQuery;
+      searchInput.focus();
+      searchInput.select();
+      setSearchStatus();
+    }}
+
+    function closeSearch(clear) {{
+      searchBar.classList.add("hidden");
+      searchInput.blur();
+      if (clear) {{
+        searchQuery = "";
+        clearSearchHighlights();
+        setSearchStatus();
+      }}
+    }}
+
+    function toggleHelp(show) {{
+      helpOverlay.classList.toggle("hidden", !show);
+    }}
+
+    searchInput.addEventListener("input", () => {{
+      highlightSearch(searchInput.value);
+    }});
+
+    searchInput.addEventListener("keydown", event => {{
+      if (event.key === "Enter") {{
+        event.preventDefault();
+        closeSearch(false);
+      }} else if (event.key === "Escape") {{
+        event.preventDefault();
+        closeSearch(false);
+      }}
+    }});
+
     window.addEventListener("keydown", event => {{
-      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || isTypingTarget(event.target)) {{
+      if (event.metaKey || event.ctrlKey || event.altKey) {{
+        return;
+      }}
+
+      if (!helpOverlay.classList.contains("hidden")) {{
+        if (event.key === "Escape" || event.key === "?") {{
+          event.preventDefault();
+          toggleHelp(false);
+        }}
+        return;
+      }}
+
+      if (!searchBar.classList.contains("hidden") || isTypingTarget(event.target)) {{
         return;
       }}
 
@@ -218,6 +396,10 @@ fn render_document(file: &Path) -> Result<String> {
       const page = Math.max(120, Math.round(window.innerHeight * 0.82));
 
       switch (event.key) {{
+        case "/":
+          event.preventDefault();
+          openSearch();
+          break;
         case "j":
           event.preventDefault();
           window.scrollBy({{ top: line, behavior: "instant" }});
@@ -253,6 +435,27 @@ fn render_document(file: &Path) -> Result<String> {
         case "G":
           event.preventDefault();
           window.scrollTo({{ top: document.body.scrollHeight, behavior: "instant" }});
+          break;
+        case "n":
+          if (searchQuery) {{
+            event.preventDefault();
+            setCurrentHit(currentHit + 1);
+          }}
+          break;
+        case "N":
+          if (searchQuery) {{
+            event.preventDefault();
+            setCurrentHit(currentHit - 1);
+          }}
+          break;
+        case "?":
+          event.preventDefault();
+          toggleHelp(true);
+          break;
+        case "Escape":
+          event.preventDefault();
+          closeSearch(false);
+          toggleHelp(false);
           break;
         case "q":
           event.preventDefault();
@@ -414,6 +617,95 @@ th, td {
 
 img, svg {
   max-width: 100%;
+}
+
+.hud {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(620px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, CanvasText 20%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, Canvas 92%, CanvasText);
+  box-shadow: 0 14px 34px color-mix(in srgb, CanvasText 18%, transparent);
+}
+
+.search-prefix,
+#search-status {
+  color: color-mix(in srgb, CanvasText 70%, Canvas);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+#search-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: CanvasText;
+  font: 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.mdview-search-hit {
+  border-radius: 3px;
+  background: #ffe066;
+  color: #1f1f1f;
+}
+
+.mdview-search-hit.current {
+  background: #2f80ed;
+  color: white;
+}
+
+.help {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, CanvasText 28%, transparent);
+}
+
+.help-panel {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  padding: 22px 24px;
+  border: 1px solid color-mix(in srgb, CanvasText 20%, transparent);
+  border-radius: 8px;
+  background: Canvas;
+  box-shadow: 0 20px 50px color-mix(in srgb, CanvasText 25%, transparent);
+}
+
+.help-panel h2 {
+  margin-top: 0;
+}
+
+.help-panel dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 9px 18px;
+  margin: 0;
+}
+
+.help-panel dt {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700;
+}
+
+.help-panel dd {
+  margin: 0;
+}
+
+.hidden {
+  display: none;
 }
 
 .mermaid {

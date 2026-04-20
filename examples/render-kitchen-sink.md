@@ -137,6 +137,10 @@ The image below is a local SVG referenced with a relative path. This checks that
 
 ![Markdown preview pipeline](diagram.svg)
 
+The next image is a local JPG in the same folder. It checks raster image loading and scaling.
+
+![Local JPG test image](example.jpg)
+
 Remote images are regular Markdown too, but this test file avoids them so it stays deterministic.
 
 ## Tables
@@ -162,4 +166,3 @@ Here is a small checklist inside prose:
 - Prefer predictable behavior over feature sprawl.
 
 And here is a final longer paragraph to test the bottom of the page. If you edit this file while `mdview` is open, the rendered window should refresh after save and keep roughly the same scroll position. That makes it practical to work on a section halfway through a long technical document without snapping back to the top every time.
-
