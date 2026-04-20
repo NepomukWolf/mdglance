@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use base64::{Engine as _, engine::general_purpose};
 use clap::Parser as ClapParser;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use pulldown_cmark::{CodeBlockKind, CowStr, Event, Options, Parser, Tag, TagEnd, html};
@@ -26,6 +27,7 @@ struct Args {
 enum UserEvent {
     Reload,
     Close,
+    OpenExternal(String),
     WatchError(String),
 }
 
@@ -66,6 +68,17 @@ fn run(file: PathBuf) -> Result<()> {
                 }
             }
         })
+        .with_navigation_handler({
+            let proxy = event_loop.create_proxy();
+            move |url| {
+                if is_external_navigation(&url) {
+                    let _ = proxy.send_event(UserEvent::OpenExternal(url));
+                    false
+                } else {
+                    true
+                }
+            }
+        })
         .build(&window)
         .context("failed to create webview")?;
 
@@ -99,6 +112,11 @@ fn run(file: PathBuf) -> Result<()> {
             }
             TaoEvent::UserEvent(UserEvent::Close) => {
                 *control_flow = ControlFlow::Exit;
+            }
+            TaoEvent::UserEvent(UserEvent::OpenExternal(url)) => {
+                if let Err(err) = open_external_url(&url) {
+                    eprintln!("failed to open {url}: {err}");
+                }
             }
             TaoEvent::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -153,6 +171,18 @@ fn watch_file(file: PathBuf, proxy: EventLoopProxy<UserEvent>) -> Result<Recomme
     });
 
     Ok(watcher)
+}
+
+fn is_external_navigation(url: &str) -> bool {
+    url.starts_with("http://") || url.starts_with("https://")
+}
+
+fn open_external_url(url: &str) -> Result<()> {
+    std::process::Command::new("open")
+        .arg(url)
+        .spawn()
+        .with_context(|| format!("failed to launch browser for {url}"))?;
+    Ok(())
 }
 
 fn render_document(file: &Path) -> Result<String> {
@@ -371,7 +401,7 @@ fn render_document(file: &Path) -> Result<String> {
         closeSearch(false);
       }} else if (event.key === "Escape") {{
         event.preventDefault();
-        closeSearch(false);
+        closeSearch(true);
       }}
     }});
 
@@ -454,7 +484,7 @@ fn render_document(file: &Path) -> Result<String> {
           break;
         case "Escape":
           event.preventDefault();
-          closeSearch(false);
+          closeSearch(true);
           toggleHelp(false);
           break;
         case "q":
@@ -475,10 +505,13 @@ fn render_document(file: &Path) -> Result<String> {
 fn render_body(file: &Path) -> Result<String> {
     let markdown = std::fs::read_to_string(file)
         .with_context(|| format!("failed to read {}", file.display()))?;
-    Ok(markdown_to_html(&markdown))
+    let base_dir = file
+        .parent()
+        .context("cannot render a file without a parent directory")?;
+    Ok(markdown_to_html(&markdown, base_dir))
 }
 
-fn markdown_to_html(markdown: &str) -> String {
+fn markdown_to_html(markdown: &str, base_dir: &Path) -> String {
     let parser = Parser::new_ext(markdown, markdown_options());
     let mut events = Vec::new();
     let mut in_mermaid = false;
@@ -504,7 +537,7 @@ fn markdown_to_html(markdown: &str) -> String {
                 mermaid.push_str(&text);
             }
             other if !in_mermaid => {
-                events.push(other.into_static());
+                events.push(rewrite_local_image(other, base_dir).into_static());
             }
             _ => {}
         }
@@ -513,6 +546,71 @@ fn markdown_to_html(markdown: &str) -> String {
     let mut out = String::new();
     html::push_html(&mut out, events.into_iter());
     out
+}
+
+fn rewrite_local_image<'a>(event: Event<'a>, base_dir: &Path) -> Event<'a> {
+    let Event::Start(Tag::Image {
+        link_type,
+        dest_url,
+        title,
+        id,
+    }) = event
+    else {
+        return event;
+    };
+
+    if is_external_url(&dest_url) || dest_url.starts_with("data:") {
+        return Event::Start(Tag::Image {
+            link_type,
+            dest_url,
+            title,
+            id,
+        });
+    }
+
+    let image_path = base_dir.join(dest_url.as_ref());
+    let Some(data_url) = image_data_url(&image_path) else {
+        return Event::Start(Tag::Image {
+            link_type,
+            dest_url,
+            title,
+            id,
+        });
+    };
+
+    Event::Start(Tag::Image {
+        link_type,
+        dest_url: CowStr::Boxed(data_url.into_boxed_str()),
+        title,
+        id,
+    })
+}
+
+fn is_external_url(url: &str) -> bool {
+    url.contains("://") || url.starts_with("//") || url.starts_with('#')
+}
+
+fn image_data_url(path: &Path) -> Option<String> {
+    let mime = match path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("png") => "image/png",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("svg") => "image/svg+xml",
+        Some("bmp") => "image/bmp",
+        _ => return None,
+    };
+
+    let bytes = std::fs::read(path).ok()?;
+    Some(format!(
+        "data:{mime};base64,{}",
+        general_purpose::STANDARD.encode(bytes)
+    ))
 }
 
 fn markdown_options() -> Options {

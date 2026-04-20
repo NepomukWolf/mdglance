@@ -152,6 +152,12 @@ Remote images are regular Markdown too, but this test file avoids them so it sta
 | Images | Relative paths work | Uses a document `<base>` URL |
 | Refresh | On file changes | Watches the parent directory |
 
+## Links
+
+This external link is included to test navigation from rendered Markdown:
+
+[TUM Chair of Computational Civil Engineering](https://www.cee.ed.tum.de/ccbe/home/)
+
 ## Blockquote
 
 > A previewer should be quick enough that using it does not feel like switching tools.
