@@ -214,6 +214,10 @@ This external link is included to test navigation from rendered Markdown:
 
 [TUM Chair of Computational Civil Engineering](https://www.cee.ed.tum.de/ccbe/home/)
 
+This local Markdown link is included to test in-app history and keyboard link following:
+
+[Code highlighting sample](render-code-highlighting.md)
+
 ## Blockquote
 
 > A previewer should be quick enough that using it does not feel like switching tools.

@@ -48,16 +48,16 @@ cargo build
 | Key       | Action                                        |
 | --------- | --------------------------------------------- |
 | `j` / `k` | Scroll down / up in document mode             |
-| `h` / `l` | Scroll left / right in document mode          |
+| `h` / `l` | Back / forward through Markdown history       |
 | `d` / `u` | Half page down / up                           |
 | `Space`   | Page down                                     |
 | `g` / `G` | Top / bottom                                  |
 | `/`       | Open search                                   |
 | `n` / `N` | Next / previous search hit                    |
+| `f`       | Open keyboard link hints                      |
 | `t`       | Toggle table of contents                      |
 | `Tab`     | Switch focus between document and TOC         |
 | `j` / `k` | TOC mode: next / previous heading             |
-| `h` / `l` | TOC mode: parent / first child heading        |
 | `Enter`   | Accept search or jump to selected TOC heading |
 | `?`       | Show help                                     |
 | `Esc`     | Close search/help                             |
@@ -127,8 +127,6 @@ fullscreen = false
 [keybindings]
 scroll_down = ["j"]
 scroll_up = ["k"]
-scroll_left = ["h"]
-scroll_right = ["l"]
 half_page_down = ["d"]
 half_page_up = ["u"]
 page_down = ["Space"]
@@ -142,10 +140,11 @@ show_help = ["?"]
 close_overlay = ["Escape"]
 toggle_toc = ["t"]
 toggle_focus = ["Tab"]
+back = ["h"]
+forward = ["l"]
+open_link_hints = ["f"]
 toc_down = ["j"]
 toc_up = ["k"]
-toc_parent = ["h"]
-toc_child = ["l"]
 activate_selection = ["Enter"]
 quit = ["q", "Cmd+W", "Cmd+Q"]
 ```

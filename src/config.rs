@@ -40,8 +40,6 @@ pub struct TocConfig {
 pub enum Action {
     ScrollDown,
     ScrollUp,
-    ScrollLeft,
-    ScrollRight,
     HalfPageDown,
     HalfPageUp,
     PageDown,
@@ -55,10 +53,11 @@ pub enum Action {
     CloseOverlay,
     ToggleToc,
     ToggleFocus,
+    Back,
+    Forward,
+    OpenLinkHints,
     TocDown,
     TocUp,
-    TocParent,
-    TocChild,
     ActivateSelection,
     Quit,
 }
@@ -274,8 +273,6 @@ impl Action {
         &[
             Action::ScrollDown,
             Action::ScrollUp,
-            Action::ScrollLeft,
-            Action::ScrollRight,
             Action::HalfPageDown,
             Action::HalfPageUp,
             Action::PageDown,
@@ -289,10 +286,11 @@ impl Action {
             Action::CloseOverlay,
             Action::ToggleToc,
             Action::ToggleFocus,
+            Action::Back,
+            Action::Forward,
+            Action::OpenLinkHints,
             Action::TocDown,
             Action::TocUp,
-            Action::TocParent,
-            Action::TocChild,
             Action::ActivateSelection,
             Action::Quit,
         ]
@@ -302,8 +300,6 @@ impl Action {
         Some(match value {
             "scroll_down" => Action::ScrollDown,
             "scroll_up" => Action::ScrollUp,
-            "scroll_left" => Action::ScrollLeft,
-            "scroll_right" => Action::ScrollRight,
             "half_page_down" => Action::HalfPageDown,
             "half_page_up" => Action::HalfPageUp,
             "page_down" => Action::PageDown,
@@ -317,10 +313,11 @@ impl Action {
             "close_overlay" => Action::CloseOverlay,
             "toggle_toc" => Action::ToggleToc,
             "toggle_focus" => Action::ToggleFocus,
+            "back" => Action::Back,
+            "forward" => Action::Forward,
+            "open_link_hints" => Action::OpenLinkHints,
             "toc_down" => Action::TocDown,
             "toc_up" => Action::TocUp,
-            "toc_parent" => Action::TocParent,
-            "toc_child" => Action::TocChild,
             "activate_selection" => Action::ActivateSelection,
             "quit" => Action::Quit,
             _ => return None,
@@ -331,8 +328,6 @@ impl Action {
         match self {
             Action::ScrollDown => "scroll_down",
             Action::ScrollUp => "scroll_up",
-            Action::ScrollLeft => "scroll_left",
-            Action::ScrollRight => "scroll_right",
             Action::HalfPageDown => "half_page_down",
             Action::HalfPageUp => "half_page_up",
             Action::PageDown => "page_down",
@@ -346,10 +341,11 @@ impl Action {
             Action::CloseOverlay => "close_overlay",
             Action::ToggleToc => "toggle_toc",
             Action::ToggleFocus => "toggle_focus",
+            Action::Back => "back",
+            Action::Forward => "forward",
+            Action::OpenLinkHints => "open_link_hints",
             Action::TocDown => "toc_down",
             Action::TocUp => "toc_up",
-            Action::TocParent => "toc_parent",
-            Action::TocChild => "toc_child",
             Action::ActivateSelection => "activate_selection",
             Action::Quit => "quit",
         }
@@ -361,15 +357,9 @@ impl Action {
             Action::ToggleFocus => SCOPE_DOCUMENT | SCOPE_TOC,
             Action::CloseOverlay => SCOPE_SEARCH | SCOPE_HELP,
             Action::AcceptSearch => SCOPE_SEARCH,
-            Action::TocDown
-            | Action::TocUp
-            | Action::TocParent
-            | Action::TocChild
-            | Action::ActivateSelection => SCOPE_TOC,
+            Action::TocDown | Action::TocUp | Action::ActivateSelection => SCOPE_TOC,
             Action::ScrollDown
             | Action::ScrollUp
-            | Action::ScrollLeft
-            | Action::ScrollRight
             | Action::HalfPageDown
             | Action::HalfPageUp
             | Action::PageDown
@@ -377,7 +367,10 @@ impl Action {
             | Action::Bottom
             | Action::OpenSearch
             | Action::NextSearchHit
-            | Action::PreviousSearchHit => SCOPE_DOCUMENT,
+            | Action::PreviousSearchHit
+            | Action::Back
+            | Action::Forward
+            | Action::OpenLinkHints => SCOPE_DOCUMENT,
         }
     }
 }
@@ -413,8 +406,6 @@ fn default_keybindings() -> Vec<(Action, Vec<&'static str>)> {
     vec![
         (Action::ScrollDown, vec!["j"]),
         (Action::ScrollUp, vec!["k"]),
-        (Action::ScrollLeft, vec!["h"]),
-        (Action::ScrollRight, vec!["l"]),
         (Action::HalfPageDown, vec!["d"]),
         (Action::HalfPageUp, vec!["u"]),
         (Action::PageDown, vec!["Space"]),
@@ -428,10 +419,11 @@ fn default_keybindings() -> Vec<(Action, Vec<&'static str>)> {
         (Action::CloseOverlay, vec!["Escape"]),
         (Action::ToggleToc, vec!["t"]),
         (Action::ToggleFocus, vec!["Tab"]),
+        (Action::Back, vec!["h"]),
+        (Action::Forward, vec!["l"]),
+        (Action::OpenLinkHints, vec!["f"]),
         (Action::TocDown, vec!["j"]),
         (Action::TocUp, vec!["k"]),
-        (Action::TocParent, vec!["h"]),
-        (Action::TocChild, vec!["l"]),
         (Action::ActivateSelection, vec!["Enter"]),
         (Action::Quit, vec!["q", "Cmd+W", "Cmd+Q"]),
     ]

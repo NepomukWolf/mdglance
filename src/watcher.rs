@@ -46,3 +46,30 @@ pub fn watch_file(file: PathBuf, proxy: EventLoopProxy<UserEvent>) -> Result<Rec
 
     Ok(watcher)
 }
+
+pub fn retarget_watch(
+    watcher: &mut RecommendedWatcher,
+    previous_dir: Option<&PathBuf>,
+    next_file: &PathBuf,
+) -> Result<PathBuf> {
+    let next_dir = next_file
+        .parent()
+        .context("cannot watch a file without a parent directory")?
+        .to_path_buf();
+
+    if let Some(previous_dir) = previous_dir
+        && previous_dir != &next_dir
+    {
+        watcher
+            .unwatch(previous_dir)
+            .with_context(|| format!("failed to unwatch {}", previous_dir.display()))?;
+    }
+
+    if previous_dir != Some(&next_dir) {
+        watcher
+            .watch(&next_dir, RecursiveMode::NonRecursive)
+            .with_context(|| format!("failed to watch {}", next_dir.display()))?;
+    }
+
+    Ok(next_dir)
+}

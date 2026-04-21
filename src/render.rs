@@ -348,9 +348,7 @@ fn render_code_block_html(block: CodeBlockCapture) -> String {
         .and_then(|language| highlighted_code_html(language, &block.text))
         .unwrap_or_else(|| html_escape::encode_text(&block.text).into_owned());
 
-    format!(
-        r#"<pre class="code-block"><code{language_class}>{code_html}</code></pre>"#
-    )
+    format!(r#"<pre class="code-block"><code{language_class}>{code_html}</code></pre>"#)
 }
 
 fn highlighted_code_html(language: &str, source: &str) -> Option<String> {
@@ -473,6 +471,8 @@ impl CodeBlockCapture {
             return None;
         };
 
-        info.split_whitespace().next().filter(|token| !token.is_empty())
+        info.split_whitespace()
+            .next()
+            .filter(|token| !token.is_empty())
     }
 }
