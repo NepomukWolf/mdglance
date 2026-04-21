@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, sync::LazyLock};
 
 use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose};
@@ -6,8 +6,24 @@ use pulldown_cmark::{
     CodeBlockKind, CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd, html,
 };
 use serde::Serialize;
+use syntect::{
+    easy::HighlightLines,
+    highlighting::{Theme, ThemeSet},
+    html::{IncludeBackground, styled_line_to_highlighted_html},
+    parsing::SyntaxSet,
+    util::LinesWithEndings,
+};
 
 use crate::{app, assets, config::Config};
+
+static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
+static SYNTAX_THEME: LazyLock<Theme> = LazyLock::new(|| {
+    ThemeSet::load_defaults()
+        .themes
+        .get("InspiredGitHub")
+        .cloned()
+        .expect("default syntect theme must exist")
+});
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RenderedContent {
@@ -97,12 +113,30 @@ fn markdown_to_html(markdown: &str, base_dir: &Path, max_toc_depth: u8) -> Rende
     let parser = Parser::new_ext(markdown, markdown_options());
     let mut events = Vec::new();
     let mut toc = Vec::new();
-    let mut in_mermaid = false;
-    let mut mermaid = String::new();
+    let mut current_block = None::<CodeBlockCapture>;
     let mut current_heading = None::<HeadingCapture>;
     let mut slug_counts = HashMap::new();
 
     for event in parser {
+        if let Some(block) = current_block.as_mut() {
+            match event {
+                Event::End(TagEnd::CodeBlock) => {
+                    let block = current_block.take().expect("code block state must exist");
+                    events.push(Event::Html(CowStr::Boxed(
+                        render_code_block_html(block).into_boxed_str(),
+                    )));
+                }
+                Event::Text(text) | Event::Code(text) => {
+                    block.text.push_str(&text);
+                }
+                Event::SoftBreak | Event::HardBreak => {
+                    block.text.push('\n');
+                }
+                _ => {}
+            }
+            continue;
+        }
+
         if current_heading.is_some() {
             match event {
                 Event::End(TagEnd::Heading(_level)) => {
@@ -197,27 +231,12 @@ fn markdown_to_html(markdown: &str, base_dir: &Path, max_toc_depth: u8) -> Rende
                     text: String::new(),
                 });
             }
-            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(lang))) if is_mermaid_lang(&lang) => {
-                in_mermaid = true;
-                mermaid.clear();
+            Event::Start(Tag::CodeBlock(kind)) => {
+                current_block = Some(CodeBlockCapture::new(kind));
             }
-            Event::End(TagEnd::CodeBlock) if in_mermaid => {
-                let escaped = html_escape::encode_text(&mermaid);
-                events.push(Event::Html(CowStr::Boxed(
-                    format!(r#"<pre class="mermaid">{escaped}</pre>"#).into_boxed_str(),
-                )));
-                in_mermaid = false;
-            }
-            Event::Text(text) if in_mermaid => {
-                mermaid.push_str(&text);
-            }
-            Event::Code(text) if in_mermaid => {
-                mermaid.push_str(&text);
-            }
-            other if !in_mermaid => {
+            other => {
                 events.push(rewrite_local_image(other, base_dir).into_static());
             }
-            _ => {}
         }
     }
 
@@ -305,6 +324,49 @@ fn is_mermaid_lang(lang: &str) -> bool {
         .is_some_and(|name| name.eq_ignore_ascii_case("mermaid"))
 }
 
+fn render_code_block_html(block: CodeBlockCapture) -> String {
+    if block
+        .language()
+        .is_some_and(|language| is_mermaid_lang(language))
+    {
+        let escaped = html_escape::encode_text(&block.text);
+        return format!(r#"<pre class="mermaid">{escaped}</pre>"#);
+    }
+
+    let language_class = block
+        .language()
+        .map(|language| {
+            format!(
+                r#" class="language-{}""#,
+                html_escape::encode_double_quoted_attribute(language)
+            )
+        })
+        .unwrap_or_default();
+
+    let code_html = block
+        .language()
+        .and_then(|language| highlighted_code_html(language, &block.text))
+        .unwrap_or_else(|| html_escape::encode_text(&block.text).into_owned());
+
+    format!(
+        r#"<pre class="code-block"><code{language_class}>{code_html}</code></pre>"#
+    )
+}
+
+fn highlighted_code_html(language: &str, source: &str) -> Option<String> {
+    let syntax = SYNTAX_SET.find_syntax_by_token(language)?;
+    let mut highlighter = HighlightLines::new(syntax, &SYNTAX_THEME);
+    let mut html = String::new();
+
+    for line in LinesWithEndings::from(source) {
+        let ranges = highlighter.highlight_line(line, &SYNTAX_SET).ok()?;
+        let line_html = styled_line_to_highlighted_html(&ranges[..], IncludeBackground::No).ok()?;
+        html.push_str(&line_html);
+    }
+
+    Some(html)
+}
+
 fn heading_level_number(level: HeadingLevel) -> u8 {
     match level {
         HeadingLevel::H1 => 1,
@@ -381,4 +443,36 @@ struct HeadingCapture {
     attrs: Vec<(CowStr<'static>, Option<CowStr<'static>>)>,
     events: Vec<Event<'static>>,
     text: String,
+}
+
+struct CodeBlockCapture {
+    kind: CapturedCodeBlockKind,
+    text: String,
+}
+
+enum CapturedCodeBlockKind {
+    Indented,
+    Fenced(String),
+}
+
+impl CodeBlockCapture {
+    fn new(kind: CodeBlockKind<'_>) -> Self {
+        let kind = match kind {
+            CodeBlockKind::Indented => CapturedCodeBlockKind::Indented,
+            CodeBlockKind::Fenced(info) => CapturedCodeBlockKind::Fenced(info.into_string()),
+        };
+
+        Self {
+            kind,
+            text: String::new(),
+        }
+    }
+
+    fn language(&self) -> Option<&str> {
+        let CapturedCodeBlockKind::Fenced(info) = &self.kind else {
+            return None;
+        };
+
+        info.split_whitespace().next().filter(|token| !token.is_empty())
+    }
 }
