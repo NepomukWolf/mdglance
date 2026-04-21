@@ -5,13 +5,16 @@ use tao::{
     dpi::LogicalSize,
     event::{ElementState, Event as TaoEvent, KeyEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
-    keyboard::{Key, ModifiersState},
-    window::WindowBuilder,
+    keyboard::ModifiersState,
+    window::{Fullscreen, WindowBuilder},
 };
 use url::Url;
 use wry::WebViewBuilder;
 
-use crate::{render, watcher};
+use crate::{
+    config::{Action, Config},
+    render, watcher,
+};
 
 #[derive(Debug, Clone)]
 pub enum UserEvent {
@@ -22,6 +25,7 @@ pub enum UserEvent {
 }
 
 pub fn run(file: PathBuf) -> Result<()> {
+    let config = Config::load()?;
     let file = file
         .canonicalize()
         .with_context(|| format!("failed to resolve {}", file.display()))?;
@@ -35,13 +39,21 @@ pub fn run(file: PathBuf) -> Result<()> {
     let _watcher = watcher::watch_file(file.clone(), proxy)?;
 
     let title = format!("mdglance - {}", display_name(&file));
-    let window = WindowBuilder::new()
-        .with_title(title)
-        .with_inner_size(LogicalSize::new(1080.0, 860.0))
+    let mut window_builder =
+        WindowBuilder::new()
+            .with_title(title)
+            .with_inner_size(LogicalSize::new(
+                f64::from(config.window.width),
+                f64::from(config.window.height),
+            ));
+    if config.window.fullscreen {
+        window_builder = window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
+    }
+    let window = window_builder
         .build(&event_loop)
         .context("failed to create window")?;
 
-    let html = render::render_document(&file)?;
+    let html = render::render_document(&file, &config)?;
     let webview = WebViewBuilder::new()
         .with_html(html)
         .with_ipc_handler({
@@ -117,23 +129,14 @@ pub fn run(file: PathBuf) -> Result<()> {
                         ..
                     },
                 ..
-            } => match logical_key {
-                Key::Character("w") | Key::Character("W")
-                    if current_modifiers.super_key()
-                        && !current_modifiers.control_key()
-                        && !current_modifiers.alt_key() =>
-                {
-                    *control_flow = ControlFlow::Exit;
-                }
-                Key::Character("q") | Key::Character("Q")
-                    if current_modifiers.super_key()
-                        && !current_modifiers.control_key()
-                        && !current_modifiers.alt_key() =>
-                {
-                    *control_flow = ControlFlow::Exit;
-                }
-                _ => {}
-            },
+            } if config.bindings_for(Action::Quit).iter().any(|binding| {
+                binding
+                    .shortcut
+                    .matches_native(&logical_key, current_modifiers)
+            }) =>
+            {
+                *control_flow = ControlFlow::Exit;
+            }
             TaoEvent::WindowEvent {
                 event: WindowEvent::ModifiersChanged(modifiers),
                 ..

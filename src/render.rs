@@ -3,14 +3,16 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose};
 use pulldown_cmark::{CodeBlockKind, CowStr, Event, Options, Parser, Tag, TagEnd, html};
+use serde::Serialize;
 
-use crate::{app, assets};
+use crate::{app, assets, config::Config};
 
-pub fn render_document(file: &Path) -> Result<String> {
+pub fn render_document(file: &Path, config: &Config) -> Result<String> {
     let body = render_body(file)?;
     let display_name = app::display_name(file);
     let title = html_escape::encode_text(&display_name);
     let mermaid_js = assets::js_string_literal(assets::MERMAID_JS)?;
+    let app_config = inline_json(&config.web_config())?;
     let base = file
         .parent()
         .map(path_to_file_url)
@@ -37,24 +39,12 @@ pub fn render_document(file: &Path) -> Result<String> {
   <div id="help-overlay" class="help hidden">
     <div class="help-panel">
       <h2>Keybindings</h2>
-      <dl>
-        <dt>j / k</dt><dd>Scroll down / up</dd>
-        <dt>h / l</dt><dd>Scroll left / right</dd>
-        <dt>d / u</dt><dd>Half page down / up</dd>
-        <dt>Space</dt><dd>Page down</dd>
-        <dt>g / G</dt><dd>Top / bottom</dd>
-        <dt>Cmd-W / Cmd-Q</dt><dd>Quit</dd>
-        <dt>/</dt><dd>Search</dd>
-        <dt>Enter</dt><dd>Accept search</dd>
-        <dt>n / N</dt><dd>Next / previous search hit</dd>
-        <dt>?</dt><dd>Show this help</dd>
-        <dt>Esc</dt><dd>Close search or help</dd>
-        <dt>q</dt><dd>Quit</dd>
-      </dl>
+      <dl id="help-list"></dl>
     </div>
   </div>
   <script>
     window.__MDVIEW_MERMAID_SOURCE = {mermaid_js};
+    window.__MDGLANCE_CONFIG = {app_config};
   </script>
   <script type="module">{app_js}</script>
 </body>
@@ -196,4 +186,9 @@ fn path_to_file_url(path: &Path) -> Result<String> {
     let mut url = String::from("file://");
     url.push_str(&path.to_string_lossy().replace(' ', "%20"));
     Ok(url)
+}
+
+fn inline_json<T: Serialize>(value: &T) -> Result<String> {
+    let json = serde_json::to_string(value)?;
+    Ok(json.replace("</", "<\\/"))
 }

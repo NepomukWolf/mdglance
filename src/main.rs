@@ -1,6 +1,7 @@
 mod app;
 mod assets;
 mod cli;
+mod config;
 mod render;
 mod watcher;
 

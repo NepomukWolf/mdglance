@@ -97,3 +97,41 @@ Build:
 ```sh
 cargo build
 ```
+
+## Configuration
+
+`mdglance` resolves config from one of two locations:
+
+1. `./mdglance.toml` in the directory where you invoked the CLI
+2. `~/.config/mdglance/config.toml` if no project-local file is present
+
+Defaults stay in the binary, so config is optional.
+
+Example:
+
+```toml
+[window]
+width = 1280
+height = 900
+fullscreen = false
+
+[keybindings]
+scroll_down = ["j"]
+scroll_up = ["k"]
+scroll_left = ["h"]
+scroll_right = ["l"]
+half_page_down = ["d"]
+half_page_up = ["u"]
+page_down = ["Space"]
+top = ["g"]
+bottom = ["Shift+G"]
+open_search = ["/"]
+accept_search = ["Enter"]
+next_search_hit = ["n"]
+previous_search_hit = ["Shift+N"]
+show_help = ["?"]
+close_overlay = ["Escape"]
+quit = ["q", "Cmd+W", "Cmd+Q"]
+```
+
+When you set a keybinding entry, that action's default bindings are replaced by the list you provide.
