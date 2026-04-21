@@ -11,7 +11,7 @@
   --toc-selected-background: #75828c;
   --toc-selected-color: white;
   --pane-background-focused: #ffffff;
-  --pane-background-unfocused: #ececec;
+  --pane-background-unfocused: #f3f3f3;
 }
 
 * {
@@ -278,12 +278,12 @@ svg {
 
 .mdglance-search-hit {
   border-radius: 3px;
-  background: #ffe066;
+  background: #e5d07c;
   color: #1f1f1f;
 }
 
 .mdglance-search-hit.current {
-  background: #2f80ed;
+  background: #4d81c5;
   color: white;
 }
 

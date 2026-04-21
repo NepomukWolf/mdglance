@@ -63,7 +63,7 @@ const orderedBindings = config.keybindings.flatMap((binding) =>
   binding.shortcuts.map((shortcut) => ({ action: binding.action, shortcut })),
 );
 
-const GLOBAL_ACTIONS = new Set(["quit", "show_help", "toggle_toc"]);
+const GLOBAL_ACTIONS = new Set(["quit", "show_help", "toggle_toc", "close_overlay"]);
 const HELP_ACTIONS = new Set(["show_help", "close_overlay", "quit"]);
 const SEARCH_ACTIONS = new Set(["accept_search", "close_overlay", "quit"]);
 const DOCUMENT_ACTIONS = new Set([
