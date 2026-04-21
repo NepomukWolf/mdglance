@@ -52,11 +52,7 @@ pub fn render_document(file: &Path, config: &Config) -> Result<String> {
   <div id="app-shell" class="app-shell">
     <aside id="toc-panel" class="toc-panel" tabindex="-1" aria-label="Table of contents">
       <div class="toc-header">
-        <div>
-          <p class="toc-eyebrow">Navigation</p>
-          <h2>Contents</h2>
-        </div>
-        <span id="toc-mode" class="toc-mode">Document</span>
+        <h2>Contents</h2>
       </div>
       <nav id="toc-nav" class="toc-nav" aria-label="Table of contents"></nav>
       <p id="toc-empty" class="toc-empty hidden">No headings in this document.</p>

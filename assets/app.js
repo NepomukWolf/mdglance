@@ -12,14 +12,11 @@ const content = document.getElementById("content");
 const tocPanel = document.getElementById("toc-panel");
 const tocNav = document.getElementById("toc-nav");
 const tocEmpty = document.getElementById("toc-empty");
-const tocMode = document.getElementById("toc-mode");
 const searchBar = document.getElementById("search-bar");
 const searchInput = document.getElementById("search-input");
 const searchStatus = document.getElementById("search-status");
 const helpOverlay = document.getElementById("help-overlay");
 const helpList = document.getElementById("help-list");
-
-applyTheme();
 
 const state = {
   focusMode: "document",
@@ -404,7 +401,6 @@ function updateTocState() {
   document.body.classList.toggle("toc-visible", state.tocVisible);
   document.body.classList.toggle("toc-focus", state.focusMode === "toc");
   document.body.classList.toggle("document-focus", state.focusMode === "document");
-  tocMode.textContent = state.focusMode === "toc" ? "TOC focus" : "Document focus";
 
   for (const row of tocNav.querySelectorAll(".toc-item")) {
     const id = row.dataset.id;
@@ -415,16 +411,6 @@ function updateTocState() {
     row.setAttribute("aria-current", isActive ? "location" : "false");
     row.setAttribute("aria-selected", isSelected ? "true" : "false");
   }
-}
-
-function applyTheme() {
-  const root = document.documentElement;
-  root.style.setProperty("--toc-active-background", config.theme.toc_active_background);
-  root.style.setProperty("--toc-active-color", config.theme.toc_active_color);
-  root.style.setProperty("--toc-selected-background", config.theme.toc_selected_background);
-  root.style.setProperty("--toc-selected-color", config.theme.toc_selected_color);
-  root.style.setProperty("--pane-background-focused", config.theme.pane_background_focused);
-  root.style.setProperty("--pane-background-unfocused", config.theme.pane_background_unfocused);
 }
 
 function refreshHeadings() {
@@ -665,7 +651,7 @@ function performAction(action) {
     case "toc_child":
       return moveToChildHeading();
     case "activate_selection":
-      return jumpToHeading(state.tocSelectionId, true);
+      return jumpToHeading(state.tocSelectionId, false);
     case "quit":
       window.ipc.postMessage("close");
       return true;

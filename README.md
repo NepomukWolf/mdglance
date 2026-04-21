@@ -119,14 +119,6 @@ Example:
 visible_on_start = false
 max_depth = 3
 
-[theme]
-toc_active_background = "color-mix(in srgb, CanvasText 10%, Canvas)"
-toc_active_color = "CanvasText"
-toc_selected_background = "#2f80ed"
-toc_selected_color = "white"
-pane_background_focused = "color-mix(in srgb, CanvasText 3%, Canvas)"
-pane_background_unfocused = "Canvas"
-
 [window]
 width = 1280
 height = 900

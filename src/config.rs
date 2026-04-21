@@ -19,7 +19,6 @@ const SCOPE_HELP: u8 = 1 << 4;
 pub struct Config {
     pub window: WindowConfig,
     pub toc: TocConfig,
-    pub theme: ThemeConfig,
     keybindings: BTreeMap<Action, Vec<KeyBinding>>,
 }
 
@@ -34,16 +33,6 @@ pub struct WindowConfig {
 pub struct TocConfig {
     pub visible_on_start: bool,
     pub max_depth: u8,
-}
-
-#[derive(Debug, Clone)]
-pub struct ThemeConfig {
-    pub toc_active_background: String,
-    pub toc_active_color: String,
-    pub toc_selected_background: String,
-    pub toc_selected_color: String,
-    pub pane_background_focused: String,
-    pub pane_background_unfocused: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
@@ -93,7 +82,6 @@ pub struct Shortcut {
 pub struct WebConfig {
     pub keybindings: Vec<WebActionBinding>,
     pub toc: WebTocConfig,
-    pub theme: WebThemeConfig,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -109,16 +97,6 @@ pub struct WebTocConfig {
     pub max_depth: u8,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct WebThemeConfig {
-    pub toc_active_background: String,
-    pub toc_active_color: String,
-    pub toc_selected_background: String,
-    pub toc_selected_color: String,
-    pub pane_background_focused: String,
-    pub pane_background_unfocused: String,
-}
-
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct FileConfig {
@@ -126,8 +104,6 @@ struct FileConfig {
     window: WindowOverrides,
     #[serde(default)]
     toc: TocOverrides,
-    #[serde(default)]
-    theme: ThemeOverrides,
     #[serde(default)]
     keybindings: HashMap<String, Vec<String>>,
 }
@@ -145,17 +121,6 @@ struct WindowOverrides {
 struct TocOverrides {
     visible_on_start: Option<bool>,
     max_depth: Option<u8>,
-}
-
-#[derive(Debug, Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-struct ThemeOverrides {
-    toc_active_background: Option<String>,
-    toc_active_color: Option<String>,
-    toc_selected_background: Option<String>,
-    toc_selected_color: Option<String>,
-    pane_background_focused: Option<String>,
-    pane_background_unfocused: Option<String>,
 }
 
 impl Config {
@@ -186,24 +151,6 @@ impl Config {
         }
         if let Some(max_depth) = file_config.toc.max_depth {
             config.toc.max_depth = max_depth.max(1);
-        }
-        if let Some(value) = file_config.theme.toc_active_background {
-            config.theme.toc_active_background = value;
-        }
-        if let Some(value) = file_config.theme.toc_active_color {
-            config.theme.toc_active_color = value;
-        }
-        if let Some(value) = file_config.theme.toc_selected_background {
-            config.theme.toc_selected_background = value;
-        }
-        if let Some(value) = file_config.theme.toc_selected_color {
-            config.theme.toc_selected_color = value;
-        }
-        if let Some(value) = file_config.theme.pane_background_focused {
-            config.theme.pane_background_focused = value;
-        }
-        if let Some(value) = file_config.theme.pane_background_unfocused {
-            config.theme.pane_background_unfocused = value;
         }
 
         for (name, shortcuts) in file_config.keybindings {
@@ -248,14 +195,6 @@ impl Config {
             toc: WebTocConfig {
                 visible_on_start: self.toc.visible_on_start,
                 max_depth: self.toc.max_depth,
-            },
-            theme: WebThemeConfig {
-                toc_active_background: self.theme.toc_active_background.clone(),
-                toc_active_color: self.theme.toc_active_color.clone(),
-                toc_selected_background: self.theme.toc_selected_background.clone(),
-                toc_selected_color: self.theme.toc_selected_color.clone(),
-                pane_background_focused: self.theme.pane_background_focused.clone(),
-                pane_background_unfocused: self.theme.pane_background_unfocused.clone(),
             },
         }
     }
@@ -310,14 +249,6 @@ impl Default for Config {
             visible_on_start: false,
             max_depth: 3,
         };
-        let theme = ThemeConfig {
-            toc_active_background: String::from("color-mix(in srgb, CanvasText 10%, Canvas)"),
-            toc_active_color: String::from("CanvasText"),
-            toc_selected_background: String::from("#2f80ed"),
-            toc_selected_color: String::from("white"),
-            pane_background_focused: String::from("color-mix(in srgb, CanvasText 3%, Canvas)"),
-            pane_background_unfocused: String::from("Canvas"),
-        };
         let keybindings = default_keybindings()
             .into_iter()
             .map(|(action, displays)| {
@@ -333,7 +264,6 @@ impl Default for Config {
         Self {
             window,
             toc,
-            theme,
             keybindings,
         }
     }
