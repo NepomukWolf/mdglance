@@ -85,11 +85,12 @@ pub fn run(file: PathBuf) -> Result<()> {
         *control_flow = ControlFlow::Wait;
 
         match event {
-            TaoEvent::UserEvent(UserEvent::Reload) => match render::render_body(&file) {
-                Ok(body) => {
+            TaoEvent::UserEvent(UserEvent::Reload) => match render::render_body(&file, &config) {
+                Ok(rendered) => {
                     let payload = serde_json::json!({
                         "title": display_name(&file),
-                        "body": body,
+                        "body": rendered.body,
+                        "toc": rendered.toc,
                     });
                     let script = format!("window.__mdglanceUpdate({payload});");
                     if let Err(err) = webview.evaluate_script(&script) {

@@ -9,10 +9,17 @@ use serde::{Deserialize, Serialize};
 use tao::keyboard::{Key, ModifiersState};
 
 const PROJECT_CONFIG_NAME: &str = "mdglance.toml";
+const SCOPE_GLOBAL: u8 = 1 << 0;
+const SCOPE_DOCUMENT: u8 = 1 << 1;
+const SCOPE_SEARCH: u8 = 1 << 2;
+const SCOPE_TOC: u8 = 1 << 3;
+const SCOPE_HELP: u8 = 1 << 4;
 
 #[derive(Debug, Clone)]
 pub struct Config {
     pub window: WindowConfig,
+    pub toc: TocConfig,
+    pub theme: ThemeConfig,
     keybindings: BTreeMap<Action, Vec<KeyBinding>>,
 }
 
@@ -21,6 +28,22 @@ pub struct WindowConfig {
     pub width: u32,
     pub height: u32,
     pub fullscreen: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct TocConfig {
+    pub visible_on_start: bool,
+    pub max_depth: u8,
+}
+
+#[derive(Debug, Clone)]
+pub struct ThemeConfig {
+    pub toc_active_background: String,
+    pub toc_active_color: String,
+    pub toc_selected_background: String,
+    pub toc_selected_color: String,
+    pub pane_background_focused: String,
+    pub pane_background_unfocused: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
@@ -41,6 +64,13 @@ pub enum Action {
     PreviousSearchHit,
     ShowHelp,
     CloseOverlay,
+    ToggleToc,
+    ToggleFocus,
+    TocDown,
+    TocUp,
+    TocParent,
+    TocChild,
+    ActivateSelection,
     Quit,
 }
 
@@ -62,6 +92,8 @@ pub struct Shortcut {
 #[derive(Debug, Clone, Serialize)]
 pub struct WebConfig {
     pub keybindings: Vec<WebActionBinding>,
+    pub toc: WebTocConfig,
+    pub theme: WebThemeConfig,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -71,11 +103,31 @@ pub struct WebActionBinding {
     pub shortcuts: Vec<Shortcut>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct WebTocConfig {
+    pub visible_on_start: bool,
+    pub max_depth: u8,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WebThemeConfig {
+    pub toc_active_background: String,
+    pub toc_active_color: String,
+    pub toc_selected_background: String,
+    pub toc_selected_color: String,
+    pub pane_background_focused: String,
+    pub pane_background_unfocused: String,
+}
+
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct FileConfig {
     #[serde(default)]
     window: WindowOverrides,
+    #[serde(default)]
+    toc: TocOverrides,
+    #[serde(default)]
+    theme: ThemeOverrides,
     #[serde(default)]
     keybindings: HashMap<String, Vec<String>>,
 }
@@ -86,6 +138,24 @@ struct WindowOverrides {
     width: Option<u32>,
     height: Option<u32>,
     fullscreen: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct TocOverrides {
+    visible_on_start: Option<bool>,
+    max_depth: Option<u8>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct ThemeOverrides {
+    toc_active_background: Option<String>,
+    toc_active_color: Option<String>,
+    toc_selected_background: Option<String>,
+    toc_selected_color: Option<String>,
+    pane_background_focused: Option<String>,
+    pane_background_unfocused: Option<String>,
 }
 
 impl Config {
@@ -110,6 +180,30 @@ impl Config {
         }
         if let Some(fullscreen) = file_config.window.fullscreen {
             config.window.fullscreen = fullscreen;
+        }
+        if let Some(visible_on_start) = file_config.toc.visible_on_start {
+            config.toc.visible_on_start = visible_on_start;
+        }
+        if let Some(max_depth) = file_config.toc.max_depth {
+            config.toc.max_depth = max_depth.max(1);
+        }
+        if let Some(value) = file_config.theme.toc_active_background {
+            config.theme.toc_active_background = value;
+        }
+        if let Some(value) = file_config.theme.toc_active_color {
+            config.theme.toc_active_color = value;
+        }
+        if let Some(value) = file_config.theme.toc_selected_background {
+            config.theme.toc_selected_background = value;
+        }
+        if let Some(value) = file_config.theme.toc_selected_color {
+            config.theme.toc_selected_color = value;
+        }
+        if let Some(value) = file_config.theme.pane_background_focused {
+            config.theme.pane_background_focused = value;
+        }
+        if let Some(value) = file_config.theme.pane_background_unfocused {
+            config.theme.pane_background_unfocused = value;
         }
 
         for (name, shortcuts) in file_config.keybindings {
@@ -149,7 +243,21 @@ impl Config {
             })
             .collect();
 
-        WebConfig { keybindings }
+        WebConfig {
+            keybindings,
+            toc: WebTocConfig {
+                visible_on_start: self.toc.visible_on_start,
+                max_depth: self.toc.max_depth,
+            },
+            theme: WebThemeConfig {
+                toc_active_background: self.theme.toc_active_background.clone(),
+                toc_active_color: self.theme.toc_active_color.clone(),
+                toc_selected_background: self.theme.toc_selected_background.clone(),
+                toc_selected_color: self.theme.toc_selected_color.clone(),
+                pane_background_focused: self.theme.pane_background_focused.clone(),
+                pane_background_unfocused: self.theme.pane_background_unfocused.clone(),
+            },
+        }
     }
 
     pub fn bindings_for(&self, action: Action) -> &[KeyBinding] {
@@ -160,7 +268,7 @@ impl Config {
     }
 
     fn validate(&self) -> Result<()> {
-        let mut seen: HashMap<Shortcut, Action> = HashMap::new();
+        let mut seen: HashMap<Shortcut, Vec<(Action, u8)>> = HashMap::new();
 
         for action in Action::all() {
             let Some(bindings) = self.keybindings.get(action) else {
@@ -168,7 +276,13 @@ impl Config {
             };
 
             for binding in bindings {
-                if let Some(previous) = seen.insert(binding.shortcut.clone(), *action) {
+                let existing = seen.entry(binding.shortcut.clone()).or_default();
+                let scope = action.scope();
+
+                if let Some((previous, _)) = existing
+                    .iter()
+                    .find(|(_, previous_scope)| scope & *previous_scope != 0)
+                {
                     bail!(
                         "shortcut `{}` is assigned to both `{}` and `{}`",
                         binding.display,
@@ -176,6 +290,8 @@ impl Config {
                         action.config_key()
                     );
                 }
+
+                existing.push((*action, scope));
             }
         }
 
@@ -190,7 +306,18 @@ impl Default for Config {
             height: 860,
             fullscreen: false,
         };
-
+        let toc = TocConfig {
+            visible_on_start: false,
+            max_depth: 3,
+        };
+        let theme = ThemeConfig {
+            toc_active_background: String::from("color-mix(in srgb, CanvasText 10%, Canvas)"),
+            toc_active_color: String::from("CanvasText"),
+            toc_selected_background: String::from("#2f80ed"),
+            toc_selected_color: String::from("white"),
+            pane_background_focused: String::from("color-mix(in srgb, CanvasText 3%, Canvas)"),
+            pane_background_unfocused: String::from("Canvas"),
+        };
         let keybindings = default_keybindings()
             .into_iter()
             .map(|(action, displays)| {
@@ -205,6 +332,8 @@ impl Default for Config {
 
         Self {
             window,
+            toc,
+            theme,
             keybindings,
         }
     }
@@ -228,6 +357,13 @@ impl Action {
             Action::PreviousSearchHit,
             Action::ShowHelp,
             Action::CloseOverlay,
+            Action::ToggleToc,
+            Action::ToggleFocus,
+            Action::TocDown,
+            Action::TocUp,
+            Action::TocParent,
+            Action::TocChild,
+            Action::ActivateSelection,
             Action::Quit,
         ]
     }
@@ -249,6 +385,13 @@ impl Action {
             "previous_search_hit" => Action::PreviousSearchHit,
             "show_help" => Action::ShowHelp,
             "close_overlay" => Action::CloseOverlay,
+            "toggle_toc" => Action::ToggleToc,
+            "toggle_focus" => Action::ToggleFocus,
+            "toc_down" => Action::TocDown,
+            "toc_up" => Action::TocUp,
+            "toc_parent" => Action::TocParent,
+            "toc_child" => Action::TocChild,
+            "activate_selection" => Action::ActivateSelection,
             "quit" => Action::Quit,
             _ => return None,
         })
@@ -271,7 +414,40 @@ impl Action {
             Action::PreviousSearchHit => "previous_search_hit",
             Action::ShowHelp => "show_help",
             Action::CloseOverlay => "close_overlay",
+            Action::ToggleToc => "toggle_toc",
+            Action::ToggleFocus => "toggle_focus",
+            Action::TocDown => "toc_down",
+            Action::TocUp => "toc_up",
+            Action::TocParent => "toc_parent",
+            Action::TocChild => "toc_child",
+            Action::ActivateSelection => "activate_selection",
             Action::Quit => "quit",
+        }
+    }
+
+    fn scope(self) -> u8 {
+        match self {
+            Action::Quit | Action::ShowHelp | Action::ToggleToc => SCOPE_GLOBAL,
+            Action::ToggleFocus => SCOPE_DOCUMENT | SCOPE_TOC,
+            Action::CloseOverlay => SCOPE_SEARCH | SCOPE_HELP,
+            Action::AcceptSearch => SCOPE_SEARCH,
+            Action::TocDown
+            | Action::TocUp
+            | Action::TocParent
+            | Action::TocChild
+            | Action::ActivateSelection => SCOPE_TOC,
+            Action::ScrollDown
+            | Action::ScrollUp
+            | Action::ScrollLeft
+            | Action::ScrollRight
+            | Action::HalfPageDown
+            | Action::HalfPageUp
+            | Action::PageDown
+            | Action::Top
+            | Action::Bottom
+            | Action::OpenSearch
+            | Action::NextSearchHit
+            | Action::PreviousSearchHit => SCOPE_DOCUMENT,
         }
     }
 }
@@ -320,6 +496,13 @@ fn default_keybindings() -> Vec<(Action, Vec<&'static str>)> {
         (Action::PreviousSearchHit, vec!["Shift+N"]),
         (Action::ShowHelp, vec!["?"]),
         (Action::CloseOverlay, vec!["Escape"]),
+        (Action::ToggleToc, vec!["t"]),
+        (Action::ToggleFocus, vec!["Tab"]),
+        (Action::TocDown, vec!["j"]),
+        (Action::TocUp, vec!["k"]),
+        (Action::TocParent, vec!["h"]),
+        (Action::TocChild, vec!["l"]),
+        (Action::ActivateSelection, vec!["Enter"]),
         (Action::Quit, vec!["q", "Cmd+W", "Cmd+Q"]),
     ]
 }

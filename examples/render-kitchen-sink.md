@@ -16,6 +16,62 @@ Good preview output should make dense technical notes easy to scan. Headings sho
 
 Another useful behavior is stable refresh. When the source file changes, the preview should update without throwing away the reader's place in the document. This sample has enough vertical length to make scroll preservation noticeable during manual testing.
 
+## Heading Hierarchy
+
+This section exists specifically to test the table of contents, heading anchors, and deeper nesting.
+
+### Editor Loop
+
+The ideal flow is still terminal-first and low-friction.
+
+#### Drafting
+
+Write quickly enough that formatting concerns do not interrupt thought.
+
+#### Reviewing
+
+Preview output should make structure obvious without becoming visually loud.
+
+### Rendering Pipeline
+
+The preview path has multiple distinct stages that are useful to check in a longer document.
+
+#### Parsing
+
+Markdown gets converted into a stream of structured events.
+
+##### Common Elements
+
+Paragraphs, lists, links, blockquotes, and tables should all remain stable across reloads.
+
+##### Special Cases
+
+Mermaid blocks, heading ids, and local images need extra handling beyond the default renderer.
+
+#### Presentation
+
+The WebView should stay readable with enough typographic contrast between section levels.
+
+### Navigation
+
+This subtree gives the TOC something real to navigate.
+
+#### Document Focus
+
+Scrolling the document should move the passive TOC highlight.
+
+#### TOC Focus
+
+The selected TOC row should be visibly distinct from the passive highlight.
+
+##### Parent and Child Movement
+
+Moving with `h` and `l` should feel like walking a simple heading tree.
+
+##### Activation
+
+Pressing `Enter` should jump to a heading and return keyboard focus to the document.
+
 ## Unordered Lists
 
 - Write Markdown in Helix.

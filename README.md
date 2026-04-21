@@ -14,6 +14,7 @@ Current behavior:
 - Render common Markdown features with `pulldown-cmark`.
 - Render fenced Mermaid blocks.
 - Display local images.
+- Show an optional table of contents sidebar.
 - Refresh on save.
 - Open external links in the default browser.
 - Search rendered text with keyboard controls.
@@ -44,19 +45,23 @@ cargo build
 
 ## Keybindings
 
-| Key       | Action                     |
-| --------- | -------------------------- |
-| `j` / `k` | Scroll down / up           |
-| `h` / `l` | Scroll left / right        |
-| `d` / `u` | Half page down / up        |
-| `Space`   | Page down                  |
-| `g` / `G` | Top / bottom               |
-| `/`       | Open search                |
-| `Enter`   | Accept search              |
-| `n` / `N` | Next / previous search hit |
-| `?`       | Show help                  |
-| `Esc`     | Close search/help          |
-| `q`       | Quit                       |
+| Key       | Action                                        |
+| --------- | --------------------------------------------- |
+| `j` / `k` | Scroll down / up in document mode             |
+| `h` / `l` | Scroll left / right in document mode          |
+| `d` / `u` | Half page down / up                           |
+| `Space`   | Page down                                     |
+| `g` / `G` | Top / bottom                                  |
+| `/`       | Open search                                   |
+| `n` / `N` | Next / previous search hit                    |
+| `t`       | Toggle table of contents                      |
+| `Tab`     | Switch focus between document and TOC         |
+| `j` / `k` | TOC mode: next / previous heading             |
+| `h` / `l` | TOC mode: parent / first child heading        |
+| `Enter`   | Accept search or jump to selected TOC heading |
+| `?`       | Show help                                     |
+| `Esc`     | Close search/help                             |
+| `q`       | Quit                                          |
 
 ## Mermaid
 
@@ -110,6 +115,18 @@ Defaults stay in the binary, so config is optional.
 Example:
 
 ```toml
+[toc]
+visible_on_start = false
+max_depth = 3
+
+[theme]
+toc_active_background = "color-mix(in srgb, CanvasText 10%, Canvas)"
+toc_active_color = "CanvasText"
+toc_selected_background = "#2f80ed"
+toc_selected_color = "white"
+pane_background_focused = "color-mix(in srgb, CanvasText 3%, Canvas)"
+pane_background_unfocused = "Canvas"
+
 [window]
 width = 1280
 height = 900
@@ -131,6 +148,13 @@ next_search_hit = ["n"]
 previous_search_hit = ["Shift+N"]
 show_help = ["?"]
 close_overlay = ["Escape"]
+toggle_toc = ["t"]
+toggle_focus = ["Tab"]
+toc_down = ["j"]
+toc_up = ["k"]
+toc_parent = ["h"]
+toc_child = ["l"]
+activate_selection = ["Enter"]
 quit = ["q", "Cmd+W", "Cmd+Q"]
 ```
 

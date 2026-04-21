@@ -4,16 +4,203 @@
   line-height: 1.55;
   background: Canvas;
   color: CanvasText;
+  --panel-width: 300px;
+  --panel-padding: 18px;
+  --toc-active-background: color-mix(in srgb, CanvasText 10%, Canvas);
+  --toc-active-color: CanvasText;
+  --toc-selected-background: #2f80ed;
+  --toc-selected-color: white;
+  --pane-background-focused: color-mix(in srgb, CanvasText 3%, Canvas);
+  --pane-background-unfocused: Canvas;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
 }
 
+.app-shell {
+  min-height: 100vh;
+}
+
+.toc-panel {
+  display: none;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 20px var(--panel-padding) 28px;
+  border-right: 1px solid color-mix(in srgb, CanvasText 16%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, CanvasText 4%, Canvas), Canvas 200px);
+  background-color: var(--pane-background-unfocused);
+  transition: background-color 120ms ease;
+}
+
+body.toc-visible .app-shell {
+  display: grid;
+  grid-template-columns: minmax(240px, var(--panel-width)) minmax(0, 1fr);
+}
+
+body.toc-visible .toc-panel {
+  display: block;
+}
+
+.toc-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.toc-eyebrow {
+  margin: 0 0 4px;
+  color: color-mix(in srgb, CanvasText 56%, Canvas);
+  font: 600 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.toc-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.toc-mode {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, CanvasText 8%, Canvas);
+  color: color-mix(in srgb, CanvasText 72%, Canvas);
+  font: 600 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: nowrap;
+}
+
+.toc-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toc-item {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: CanvasText;
+  padding: 7px 10px 7px calc(10px + (var(--toc-level) - 1) * 16px);
+  text-align: left;
+  font: inherit;
+  line-height: 1.35;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.toc-item:hover {
+  background: color-mix(in srgb, CanvasText 6%, Canvas);
+}
+
+.toc-level {
+  color: color-mix(in srgb, CanvasText 54%, Canvas);
+  font: 700 11px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-transform: uppercase;
+}
+
+.toc-label {
+  min-width: 0;
+}
+
+.toc-item.is-active {
+  border-color: color-mix(in srgb, CanvasText 14%, transparent);
+  background: var(--toc-active-background);
+  color: var(--toc-active-color);
+}
+
+.toc-item.is-selected {
+  border-color: var(--toc-selected-background);
+  background: var(--toc-selected-background);
+  color: var(--toc-selected-color);
+}
+
+body.document-focus .toc-item.is-active .toc-level {
+  color: color-mix(in srgb, currentColor 58%, transparent);
+}
+
+body.document-focus .toc-item.is-selected {
+  border-color: transparent;
+  background: transparent;
+  color: CanvasText;
+}
+
+body.document-focus .toc-item.is-selected.is-active {
+  border-color: color-mix(in srgb, CanvasText 14%, transparent);
+  background: var(--toc-active-background);
+  color: var(--toc-active-color);
+}
+
+.toc-item.is-selected .toc-level {
+  color: color-mix(in srgb, currentColor 68%, transparent);
+}
+
+.toc-item[data-level="1"] .toc-label {
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.toc-item[data-level="2"] .toc-label {
+  font-size: 0.98rem;
+  font-weight: 620;
+}
+
+.toc-item[data-level="3"] .toc-label {
+  font-size: 0.95rem;
+}
+
+.toc-item[data-level="4"] .toc-label {
+  font-size: 0.92rem;
+}
+
+.toc-item[data-level="5"] .toc-label,
+.toc-item[data-level="6"] .toc-label {
+  font-size: 0.89rem;
+}
+
+.toc-empty {
+  margin: 12px 0 0;
+  color: color-mix(in srgb, CanvasText 60%, Canvas);
+}
+
 main {
   max-width: 900px;
   margin: 0 auto;
   padding: 32px 24px 56px;
+  min-width: 0;
+  background-color: var(--pane-background-unfocused);
+  transition: background-color 120ms ease;
+}
+
+main:focus,
+.toc-panel:focus {
+  outline: none;
+}
+
+body.toc-focus .toc-panel {
+  background-color: var(--pane-background-focused);
+}
+
+body.document-focus main {
+  background-color: var(--pane-background-focused);
+}
+
+body.document-focus .toc-panel,
+body.toc-focus main {
+  background-color: var(--pane-background-unfocused);
 }
 
 h1,
@@ -24,6 +211,7 @@ h5,
 h6 {
   line-height: 1.2;
   margin: 1.6em 0 0.5em;
+  scroll-margin-top: 18px;
 }
 
 h1 {
@@ -82,7 +270,7 @@ svg {
   position: fixed;
   left: 50%;
   bottom: 18px;
-  z-index: 20;
+  z-index: 40;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -125,7 +313,7 @@ svg {
 .help {
   position: fixed;
   inset: 0;
-  z-index: 30;
+  z-index: 50;
   display: grid;
   place-items: center;
   padding: 24px;
@@ -133,7 +321,7 @@ svg {
 }
 
 .help-panel {
-  width: min(560px, 100%);
+  width: min(620px, 100%);
   max-height: calc(100vh - 48px);
   overflow: auto;
   padding: 22px 24px;
@@ -175,4 +363,24 @@ svg {
 .error {
   color: #b00020;
   white-space: pre-wrap;
+}
+
+@media (max-width: 960px) {
+  body.toc-visible .app-shell {
+    display: block;
+  }
+
+  body.toc-visible .toc-panel {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 35;
+    width: min(340px, calc(100vw - 40px));
+    border-right-width: 1px;
+    box-shadow: 20px 0 40px color-mix(in srgb, CanvasText 16%, transparent);
+  }
+
+  main {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
 }
