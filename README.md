@@ -2,23 +2,11 @@
 
 `mdglance` is a small native Markdown previewer for terminal-first workflows.
 
-It opens an arbitrary Markdown file in a native macOS window, renders the document read-only, and refreshes when the source file changes. The intended loop is simple: write in a terminal editor, save, and glance at the rendered output without opening a full editor or browser workspace.
+It opens an arbitrary Markdown file in a native macOS window, renders the document read-only, and refreshes when the source file changes. The intended loop is simple: write in a terminal editor, save, and glance at a rendered document without opening a full editor or browser workspace. The app is designed to stay keyboard-first: navigation, search, TOC use, link following, and history are all available without touching the mouse.
 
 ## Status
 
-This is an early prototype.
-
-Current behavior:
-
-- Open a Markdown file from the CLI.
-- Render common Markdown features with `pulldown-cmark`.
-- Render fenced Mermaid blocks.
-- Display local images.
-- Show an optional table of contents sidebar.
-- Refresh on save.
-- Open external links in the default browser.
-- Search rendered text with keyboard controls.
-- Show keybindings in an in-app help overlay.
+This is still an early prototype, but it is already usable as a keyboard-first Markdown viewer for terminal workflows.
 
 Mermaid is bundled into the binary at compile time from `assets/mermaid.min.js`, so diagram rendering does not require runtime network access. Do not treat this as a hardened renderer for untrusted Markdown yet.
 
@@ -28,6 +16,12 @@ Run from the repository:
 
 ```sh
 cargo run -- path/to/file.md
+```
+
+Return the shell prompt immediately:
+
+```sh
+cargo run -- --detach path/to/file.md
 ```
 
 Try the included test document:
@@ -41,7 +35,21 @@ Build a local debug binary:
 ```sh
 cargo build
 ./target/debug/mdglance examples/render-kitchen-sink.md
+./target/debug/mdglance --detach examples/render-kitchen-sink.md
 ```
+
+## Features
+
+- Keyboard-first document viewer with no mouse required for core navigation.
+- Native window with live reload on file save.
+- Configurable keybindings and viewer settings via `mdglance.toml`.
+- Table of contents sidebar with keyboard focus mode and section tracking.
+- In-viewer navigation for relative `.md` links with back/forward history.
+- Keyboard link hints for opening visible links quickly.
+- Per-document scroll memory while moving between Markdown files.
+- Syntax highlighting for fenced code blocks with explicit language tags.
+- Mermaid diagram rendering without runtime network access.
+- Local image support for common raster and SVG formats.
 
 ## Keybindings
 

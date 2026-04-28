@@ -201,12 +201,12 @@ Remote images are regular Markdown too, but this test file avoids them so it sta
 
 ## Tables
 
-| Area | Current behavior | Notes |
-| --- | --- | --- |
-| Markdown | Rendered locally | Uses `pulldown-cmark` |
-| Mermaid | Rendered in WebView | Currently loaded from CDN |
-| Images | Relative paths work | Uses a document `<base>` URL |
-| Refresh | On file changes | Watches the parent directory |
+| Area     | Current behavior    | Notes                        |
+| -------- | ------------------- | ---------------------------- |
+| Markdown | Rendered locally    | Uses `pulldown-cmark`        |
+| Mermaid  | Rendered in WebView | Currently loaded from CDN    |
+| Images   | Relative paths work | Uses a document `<base>` URL |
+| Refresh  | On file changes     | Watches the parent directory |
 
 ## Links
 
