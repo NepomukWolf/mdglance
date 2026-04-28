@@ -8,7 +8,7 @@ It opens an arbitrary Markdown file in a native macOS window, renders the docume
 
 This is still an early prototype, but it is already usable as a keyboard-first Markdown viewer for terminal workflows.
 
-Mermaid is bundled into the binary at compile time from `assets/mermaid.min.js`, so diagram rendering does not require runtime network access. Do not treat this as a hardened renderer for untrusted Markdown yet.
+[Mermaid](https://mermaid.js.org/) is bundled into the binary at compile time from `assets/mermaid.min.js`, so Mermaid rendering does not require runtime network access. [PlantUML](https://plantuml.com/) blocks are rendered locally through the `plantuml` CLI when it is available. Do not treat this as a hardened renderer for untrusted Markdown yet.
 
 ## Usage
 
@@ -48,7 +48,8 @@ cargo build
 - Keyboard link hints for opening visible links quickly.
 - Per-document scroll memory while moving between Markdown files.
 - Syntax highlighting for fenced code blocks with explicit language tags.
-- Mermaid diagram rendering without runtime network access.
+- [Mermaid](https://mermaid.js.org/) diagram rendering without runtime network access.
+- Local [PlantUML](https://plantuml.com/) diagram rendering through the `plantuml` CLI, with graceful fallback to code blocks when unavailable or rendering fails.
 - Local image support for common raster and SVG formats.
 
 ## Keybindings
@@ -71,14 +72,24 @@ cargo build
 | `Esc`     | Close search/help                             |
 | `q`       | Quit                                          |
 
-## Mermaid
+## Diagrams
 
-Fenced Mermaid blocks are rendered in the preview:
+Fenced [Mermaid](https://mermaid.js.org/) blocks are rendered in the preview:
 
 ````markdown
 ```mermaid
 flowchart LR
   A[Markdown] --> B[Preview]
+```
+````
+
+Fenced [PlantUML](https://plantuml.com/) blocks are rendered locally when the `plantuml` CLI is installed:
+
+````markdown
+```plantuml
+@startuml
+Alice -> Bob: hello
+@enduml
 ```
 ````
 
@@ -90,7 +101,8 @@ Before previewing untrusted Markdown, the project should harden these areas:
 
 - Strip or escape raw HTML by default.
 - Block dangerous link schemes such as `javascript:`.
-- Keep vendored Mermaid pinned and reviewed.
+- Keep vendored [Mermaid](https://mermaid.js.org/) pinned and reviewed.
+- Treat local [PlantUML](https://plantuml.com/) execution as part of the trusted local toolchain.
 - Keep app IPC minimal and validated.
 - Keep external sites out of the preview WebView.
 

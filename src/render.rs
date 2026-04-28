@@ -14,7 +14,11 @@ use syntect::{
     util::LinesWithEndings,
 };
 
-use crate::{app, assets, config::Config};
+use crate::{
+    app, assets,
+    config::Config,
+    diagrams::{self, DiagramRender},
+};
 
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
 static SYNTAX_THEME: LazyLock<Theme> = LazyLock::new(|| {
@@ -318,19 +322,12 @@ fn markdown_options() -> Options {
         | Options::ENABLE_HEADING_ATTRIBUTES
 }
 
-fn is_mermaid_lang(lang: &str) -> bool {
-    lang.split_whitespace()
-        .next()
-        .is_some_and(|name| name.eq_ignore_ascii_case("mermaid"))
-}
-
 fn render_code_block_html(block: CodeBlockCapture) -> String {
-    if block
-        .language()
-        .is_some_and(|language| is_mermaid_lang(language))
-    {
-        let escaped = html_escape::encode_text(&block.text);
-        return format!(r#"<pre class="mermaid">{escaped}</pre>"#);
+    if let Some(diagram) = diagrams::render_diagram_html(block.language(), &block.text) {
+        match diagram {
+            DiagramRender::Html(html) => return html,
+            DiagramRender::Fallback => {}
+        }
     }
 
     let language_class = block

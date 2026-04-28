@@ -243,6 +243,16 @@ svg {
   max-width: 100%;
 }
 
+.diagram-block {
+  margin: 1em 0;
+  overflow-x: auto;
+}
+
+.diagram-block svg {
+  display: block;
+  height: auto;
+}
+
 .hud {
   position: fixed;
   left: 50%;
