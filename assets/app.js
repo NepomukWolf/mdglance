@@ -71,6 +71,8 @@ const ACTIONS = [
   { id: "toggle_focus", description: "Switch focus between document and table of contents" },
   { id: "back", description: "Back to previous markdown file" },
   { id: "forward", description: "Forward to later markdown file" },
+  { id: "previous_file", description: "Previous file in viewer queue" },
+  { id: "next_file", description: "Next file in viewer queue" },
   { id: "open_link_hints", description: "Open keyboard link hints" },
   { id: "toc_down", description: "TOC: next heading" },
   { id: "toc_up", description: "TOC: previous heading" },
@@ -103,6 +105,8 @@ const DOCUMENT_ACTIONS = new Set([
   "toggle_focus",
   "back",
   "forward",
+  "previous_file",
+  "next_file",
   "open_link_hints",
 ]);
 const TOC_ACTIONS = new Set([
@@ -110,12 +114,16 @@ const TOC_ACTIONS = new Set([
   "toc_up",
   "activate_selection",
   "toggle_focus",
+  "previous_file",
+  "next_file",
 ]);
 const SVG_ACTIONS = new Set([
   "scroll_down",
   "scroll_up",
   "scroll_left",
   "scroll_right",
+  "previous_file",
+  "next_file",
   "zoom_in",
   "zoom_out",
   "reset_view",
@@ -916,6 +924,12 @@ function performAction(action) {
         return false;
       }
       return openLinkHints();
+    case "previous_file":
+      sendIpc({ type: "previous_file", scroll_ratio: currentScrollRatio() });
+      return true;
+    case "next_file":
+      sendIpc({ type: "next_file", scroll_ratio: currentScrollRatio() });
+      return true;
     case "toc_down":
       return moveTocSelection(1);
     case "toc_up":

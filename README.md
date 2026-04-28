@@ -18,6 +18,12 @@ Run from the repository:
 cargo run -- path/to/file.md
 ```
 
+Or pipe a newline-separated file list into the viewer queue:
+
+```sh
+fd -e svg | cargo run --
+```
+
 Return the shell prompt immediately:
 
 ```sh
@@ -45,6 +51,7 @@ cargo build
 - Configurable keybindings and viewer settings via `mdglance.toml`.
 - Table of contents sidebar with keyboard focus mode and section tracking.
 - In-viewer navigation for relative `.md` links with back/forward history.
+- Optional stdin-driven file queue with previous/next navigation.
 - Keyboard link hints for opening visible links quickly.
 - Per-document scroll memory while moving between Markdown files.
 - Native SVG preview mode with fit-to-window, pan, zoom, and reset view.
@@ -59,6 +66,7 @@ cargo build
 | --------- | --------------------------------------------- |
 | `j` / `k` | Scroll down / up in document mode             |
 | `h` / `l` | Back / forward through Markdown history       |
+| `[` / `]` | Previous / next file in the viewer queue      |
 | `d` / `u` | Half page down / up                           |
 | `Space`   | Page down                                     |
 | `g` / `G` | Top / bottom                                  |
@@ -108,6 +116,16 @@ cargo run -- examples/diagram.svg
 ```
 
 In SVG mode, Markdown-specific features such as TOC, search, and link navigation are disabled. The dedicated SVG controls are pan with `h` `j` `k` `l`, zoom with `=`/`+` and `-`, and reset view with `0`.
+
+## File Queue
+
+When no file argument is provided and stdin is not a TTY, `mdglance` reads newline-separated file paths from stdin, opens the first file, and keeps the rest as a viewer queue:
+
+```sh
+fd -e svg | mdglance
+```
+
+Use `[` and `]` to move to the previous and next file in that queue. The window title shows the current queue position while you are on a queued file.
 
 ## Security Notes
 
@@ -184,6 +202,8 @@ toggle_toc = ["t"]
 toggle_focus = ["Tab"]
 back = ["h"]
 forward = ["l"]
+previous_file = ["["]
+next_file = ["]"]
 open_link_hints = ["f"]
 toc_down = ["j"]
 toc_up = ["k"]

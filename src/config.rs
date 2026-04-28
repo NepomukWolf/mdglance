@@ -58,6 +58,8 @@ pub enum Action {
     ToggleFocus,
     Back,
     Forward,
+    PreviousFile,
+    NextFile,
     OpenLinkHints,
     TocDown,
     TocUp,
@@ -296,6 +298,8 @@ impl Action {
             Action::ToggleFocus,
             Action::Back,
             Action::Forward,
+            Action::PreviousFile,
+            Action::NextFile,
             Action::OpenLinkHints,
             Action::TocDown,
             Action::TocUp,
@@ -328,6 +332,8 @@ impl Action {
             "toggle_focus" => Action::ToggleFocus,
             "back" => Action::Back,
             "forward" => Action::Forward,
+            "previous_file" => Action::PreviousFile,
+            "next_file" => Action::NextFile,
             "open_link_hints" => Action::OpenLinkHints,
             "toc_down" => Action::TocDown,
             "toc_up" => Action::TocUp,
@@ -361,6 +367,8 @@ impl Action {
             Action::ToggleFocus => "toggle_focus",
             Action::Back => "back",
             Action::Forward => "forward",
+            Action::PreviousFile => "previous_file",
+            Action::NextFile => "next_file",
             Action::OpenLinkHints => "open_link_hints",
             Action::TocDown => "toc_down",
             Action::TocUp => "toc_up",
@@ -392,6 +400,7 @@ impl Action {
             | Action::Back
             | Action::Forward
             | Action::OpenLinkHints => SCOPE_DOCUMENT,
+            Action::PreviousFile | Action::NextFile => SCOPE_DOCUMENT | SCOPE_TOC | SCOPE_SVG,
             Action::ZoomIn | Action::ZoomOut | Action::ResetView => SCOPE_SVG,
         }
     }
@@ -445,6 +454,8 @@ fn default_keybindings() -> Vec<(Action, Vec<&'static str>)> {
         (Action::ToggleFocus, vec!["Tab"]),
         (Action::Back, vec!["h"]),
         (Action::Forward, vec!["l"]),
+        (Action::PreviousFile, vec!["["]),
+        (Action::NextFile, vec!["]"]),
         (Action::OpenLinkHints, vec!["f"]),
         (Action::TocDown, vec!["j"]),
         (Action::TocUp, vec!["k"]),
