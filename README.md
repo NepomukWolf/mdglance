@@ -123,6 +123,10 @@ Build:
 cargo build
 ```
 
+## License
+
+MIT. See [LICENSE](/Users/wolf/dev/mdview/LICENSE).
+
 ## Configuration
 
 `mdglance` resolves config from one of two locations:
