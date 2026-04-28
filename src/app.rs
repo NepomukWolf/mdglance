@@ -27,18 +27,13 @@ pub enum UserEvent {
     OpenMarkdown { href: String, scroll_ratio: f64 },
     Back { scroll_ratio: f64 },
     Forward { scroll_ratio: f64 },
+    PreviousQueuedFile { scroll_ratio: f64 },
+    NextQueuedFile { scroll_ratio: f64 },
     WatchError(String),
 }
 
-pub fn run(file: PathBuf) -> Result<()> {
+pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
     let config = Config::load()?;
-    let file = file
-        .canonicalize()
-        .with_context(|| format!("failed to resolve {}", file.display()))?;
-
-    if !file.is_file() {
-        anyhow::bail!("{} is not a file", file.display());
-    }
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
@@ -48,8 +43,10 @@ pub fn run(file: PathBuf) -> Result<()> {
     let mut back_stack = Vec::<PathBuf>::new();
     let mut forward_stack = Vec::<PathBuf>::new();
     let mut scroll_positions = HashMap::<PathBuf, f64>::new();
+    let queued_files = build_file_queue(current_file.clone(), queued_files);
+    let mut queue_index = 0usize;
 
-    let title = format!("mdglance - {}", display_name(&current_file));
+    let title = window_title(&current_file, Some((queue_index, queued_files.len())));
     let mut window_builder =
         WindowBuilder::new()
             .with_title(title)
@@ -88,6 +85,13 @@ pub fn run(file: PathBuf) -> Result<()> {
                         IpcMessage::Forward { scroll_ratio } => {
                             let _ = proxy.send_event(UserEvent::Forward { scroll_ratio });
                         }
+                        IpcMessage::PreviousFile { scroll_ratio } => {
+                            let _ =
+                                proxy.send_event(UserEvent::PreviousQueuedFile { scroll_ratio });
+                        }
+                        IpcMessage::NextFile { scroll_ratio } => {
+                            let _ = proxy.send_event(UserEvent::NextQueuedFile { scroll_ratio });
+                        }
                     }
                 }
             }
@@ -119,12 +123,16 @@ pub fn run(file: PathBuf) -> Result<()> {
                             "title": display_name(&current_file),
                             "body": rendered.body,
                             "toc": rendered.toc,
+                            "document_kind": rendered.document_kind,
                         });
                         let script = format!("window.__mdglanceUpdate({payload});");
                         if let Err(err) = webview.evaluate_script(&script) {
                             eprintln!("failed to update preview: {err}");
                         }
-                        window.set_title(&format!("mdglance - {}", display_name(&current_file)));
+                        window.set_title(&window_title(
+                            &current_file,
+                            display_queue_state(&current_file, &queued_files, queue_index),
+                        ));
                     }
                     Err(err) => {
                         let message = err.to_string();
@@ -158,6 +166,8 @@ pub fn run(file: PathBuf) -> Result<()> {
                     &mut back_stack,
                     &mut forward_stack,
                     &mut scroll_positions,
+                    &queued_files,
+                    queue_index,
                     &config,
                     &window,
                     &webview,
@@ -174,6 +184,8 @@ pub fn run(file: PathBuf) -> Result<()> {
                     &mut back_stack,
                     &mut forward_stack,
                     &mut scroll_positions,
+                    &queued_files,
+                    queue_index,
                     HistoryDirection::Back,
                     &config,
                     &window,
@@ -191,12 +203,48 @@ pub fn run(file: PathBuf) -> Result<()> {
                     &mut back_stack,
                     &mut forward_stack,
                     &mut scroll_positions,
+                    &queued_files,
+                    queue_index,
                     HistoryDirection::Forward,
                     &config,
                     &window,
                     &webview,
                 ) {
                     eprintln!("failed to go forward: {err}");
+                }
+            }
+            TaoEvent::UserEvent(UserEvent::PreviousQueuedFile { scroll_ratio }) => {
+                if let Err(err) = navigate_queue(
+                    scroll_ratio,
+                    &mut current_file,
+                    &mut current_watch_dir,
+                    &mut watcher,
+                    &mut scroll_positions,
+                    &queued_files,
+                    &mut queue_index,
+                    QueueDirection::Previous,
+                    &config,
+                    &window,
+                    &webview,
+                ) {
+                    eprintln!("failed to go to previous queued file: {err}");
+                }
+            }
+            TaoEvent::UserEvent(UserEvent::NextQueuedFile { scroll_ratio }) => {
+                if let Err(err) = navigate_queue(
+                    scroll_ratio,
+                    &mut current_file,
+                    &mut current_watch_dir,
+                    &mut watcher,
+                    &mut scroll_positions,
+                    &queued_files,
+                    &mut queue_index,
+                    QueueDirection::Next,
+                    &config,
+                    &window,
+                    &webview,
+                ) {
+                    eprintln!("failed to go to next queued file: {err}");
                 }
             }
             TaoEvent::WindowEvent {
@@ -247,11 +295,18 @@ enum IpcMessage {
     OpenMarkdown { href: String, scroll_ratio: f64 },
     Back { scroll_ratio: f64 },
     Forward { scroll_ratio: f64 },
+    PreviousFile { scroll_ratio: f64 },
+    NextFile { scroll_ratio: f64 },
 }
 
 enum HistoryDirection {
     Back,
     Forward,
+}
+
+enum QueueDirection {
+    Previous,
+    Next,
 }
 
 fn navigate_to_href(
@@ -263,6 +318,8 @@ fn navigate_to_href(
     back_stack: &mut Vec<PathBuf>,
     forward_stack: &mut Vec<PathBuf>,
     scroll_positions: &mut HashMap<PathBuf, f64>,
+    queued_files: &[PathBuf],
+    queue_index: usize,
     config: &Config,
     window: &tao::window::Window,
     webview: &wry::WebView,
@@ -280,6 +337,7 @@ fn navigate_to_href(
     scroll_positions.insert(current_file.clone(), scroll_ratio);
     back_stack.push(current_file.clone());
     forward_stack.clear();
+    let queue_state = display_queue_state(&target_file, queued_files, queue_index);
     open_file(
         target_file,
         anchor,
@@ -290,6 +348,7 @@ fn navigate_to_href(
         config,
         window,
         webview,
+        queue_state,
     )
 }
 
@@ -301,6 +360,8 @@ fn navigate_history(
     back_stack: &mut Vec<PathBuf>,
     forward_stack: &mut Vec<PathBuf>,
     scroll_positions: &mut HashMap<PathBuf, f64>,
+    queued_files: &[PathBuf],
+    queue_index: usize,
     direction: HistoryDirection,
     config: &Config,
     window: &tao::window::Window,
@@ -321,6 +382,7 @@ fn navigate_history(
         HistoryDirection::Forward => back_stack.push(current_file.clone()),
     }
 
+    let queue_state = display_queue_state(&target, queued_files, queue_index);
     open_file(
         target,
         None,
@@ -331,6 +393,7 @@ fn navigate_history(
         config,
         window,
         webview,
+        queue_state,
     )
 }
 
@@ -344,6 +407,7 @@ fn open_file(
     config: &Config,
     window: &tao::window::Window,
     webview: &wry::WebView,
+    queue_state: Option<(usize, usize)>,
 ) -> Result<()> {
     let rendered = render::render_body(&target_file, config)?;
     let next_watch_dir =
@@ -354,6 +418,7 @@ fn open_file(
         "title": display_name(current_file),
         "body": rendered.body,
         "toc": rendered.toc,
+        "document_kind": rendered.document_kind,
         "anchor": anchor,
         "scroll_ratio": scroll_positions.get(current_file).copied().unwrap_or(0.0),
     });
@@ -361,8 +426,91 @@ fn open_file(
     webview
         .evaluate_script(&script)
         .context("failed to update preview")?;
-    window.set_title(&format!("mdglance - {}", display_name(current_file)));
+    window.set_title(&window_title(current_file, queue_state));
     Ok(())
+}
+
+fn navigate_queue(
+    scroll_ratio: f64,
+    current_file: &mut PathBuf,
+    current_watch_dir: &mut Option<PathBuf>,
+    watcher: &mut notify::RecommendedWatcher,
+    scroll_positions: &mut HashMap<PathBuf, f64>,
+    queued_files: &[PathBuf],
+    queue_index: &mut usize,
+    direction: QueueDirection,
+    config: &Config,
+    window: &tao::window::Window,
+    webview: &wry::WebView,
+) -> Result<()> {
+    if queued_files.len() <= 1 {
+        return Ok(());
+    }
+
+    let next_index = match direction {
+        QueueDirection::Previous if *queue_index > 0 => *queue_index - 1,
+        QueueDirection::Next if *queue_index + 1 < queued_files.len() => *queue_index + 1,
+        _ => return Ok(()),
+    };
+
+    let target = queued_files[next_index].clone();
+    if target == *current_file {
+        *queue_index = next_index;
+        return Ok(());
+    }
+
+    scroll_positions.insert(current_file.clone(), scroll_ratio);
+    *queue_index = next_index;
+    open_file(
+        target,
+        None,
+        current_file,
+        current_watch_dir,
+        watcher,
+        scroll_positions,
+        config,
+        window,
+        webview,
+        Some((*queue_index, queued_files.len())),
+    )
+}
+
+fn build_file_queue(current_file: PathBuf, queued_files: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut queue = Vec::with_capacity(queued_files.len() + 1);
+    queue.push(current_file);
+
+    for file in queued_files {
+        if !queue.contains(&file) {
+            queue.push(file);
+        }
+    }
+
+    queue
+}
+
+fn display_queue_state(
+    current_file: &Path,
+    queued_files: &[PathBuf],
+    queue_index: usize,
+) -> Option<(usize, usize)> {
+    if queued_files
+        .get(queue_index)
+        .is_some_and(|file| file == current_file)
+    {
+        Some((queue_index, queued_files.len()))
+    } else {
+        None
+    }
+}
+
+fn window_title(current_file: &Path, queue_state: Option<(usize, usize)>) -> String {
+    let mut title = format!("mdglance - {}", display_name(current_file));
+    if let Some((index, total)) = queue_state
+        && total > 1
+    {
+        title.push_str(&format!(" ({}/{})", index + 1, total));
+    }
+    title
 }
 
 fn resolve_markdown_href(current_file: &Path, href: &str) -> Result<(PathBuf, Option<String>)> {
@@ -403,10 +551,7 @@ fn external_url(url: &str) -> Option<Url> {
 }
 
 fn open_external_url(url: &str) -> Result<()> {
-    std::process::Command::new("open")
-        .arg(url)
-        .spawn()
-        .with_context(|| format!("failed to launch browser for {url}"))?;
+    open::that(url).with_context(|| format!("failed to open external URL {url}"))?;
     Ok(())
 }
 

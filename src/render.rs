@@ -33,6 +33,7 @@ static SYNTAX_THEME: LazyLock<Theme> = LazyLock::new(|| {
 pub struct RenderedContent {
     pub body: String,
     pub toc: Vec<TocItem>,
+    pub document_kind: DocumentKind,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -40,6 +41,13 @@ pub struct TocItem {
     pub id: String,
     pub title: String,
     pub level: u8,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DocumentKind {
+    Markdown,
+    Svg,
 }
 
 pub fn render_document(file: &Path, config: &Config) -> Result<String> {
@@ -51,6 +59,7 @@ pub fn render_document(file: &Path, config: &Config) -> Result<String> {
     let initial_state = inline_json(&InitialState {
         title: display_name.clone(),
         toc: rendered.toc.clone(),
+        document_kind: rendered.document_kind,
     })?;
     let base = file
         .parent()
@@ -105,12 +114,16 @@ pub fn render_document(file: &Path, config: &Config) -> Result<String> {
 }
 
 pub fn render_body(file: &Path, config: &Config) -> Result<RenderedContent> {
-    let markdown = std::fs::read_to_string(file)
+    let source = std::fs::read_to_string(file)
         .with_context(|| format!("failed to read {}", file.display()))?;
+    if is_svg_file(file) {
+        return render_svg(&source);
+    }
+
     let base_dir = file
         .parent()
         .context("cannot render a file without a parent directory")?;
-    Ok(markdown_to_html(&markdown, base_dir, config.toc.max_depth))
+    Ok(markdown_to_html(&source, base_dir, config.toc.max_depth))
 }
 
 fn markdown_to_html(markdown: &str, base_dir: &Path, max_toc_depth: u8) -> RenderedContent {
@@ -246,7 +259,24 @@ fn markdown_to_html(markdown: &str, base_dir: &Path, max_toc_depth: u8) -> Rende
 
     let mut body = String::new();
     html::push_html(&mut body, events.into_iter());
-    RenderedContent { body, toc }
+    RenderedContent {
+        body,
+        toc,
+        document_kind: DocumentKind::Markdown,
+    }
+}
+
+fn render_svg(source: &str) -> Result<RenderedContent> {
+    let svg = normalize_svg_document(source).context("failed to normalize SVG document")?;
+    let body = format!(
+        r#"<div class="svg-shell"><div id="svg-viewport" class="svg-viewport"><div id="svg-stage" class="svg-stage">{svg}</div></div></div>"#
+    );
+
+    Ok(RenderedContent {
+        body,
+        toc: Vec::new(),
+        document_kind: DocumentKind::Svg,
+    })
 }
 
 fn rewrite_local_image<'a>(event: Event<'a>, base_dir: &Path) -> Event<'a> {
@@ -429,6 +459,7 @@ fn inline_json<T: Serialize>(value: &T) -> Result<String> {
 struct InitialState {
     title: String,
     toc: Vec<TocItem>,
+    document_kind: DocumentKind,
 }
 
 struct HeadingCapture {
@@ -438,6 +469,28 @@ struct HeadingCapture {
     attrs: Vec<(CowStr<'static>, Option<CowStr<'static>>)>,
     events: Vec<Event<'static>>,
     text: String,
+}
+
+fn is_svg_file(file: &Path) -> bool {
+    file.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
+}
+
+fn normalize_svg_document(source: &str) -> Option<String> {
+    let mut svg = source.trim().to_owned();
+
+    while svg.starts_with("<?xml") {
+        let end = svg.find("?>")?;
+        svg = svg[end + 2..].trim_start().to_owned();
+    }
+
+    if svg.starts_with("<!DOCTYPE") || svg.starts_with("<!doctype") {
+        let end = svg.find('>')?;
+        svg = svg[end + 1..].trim_start().to_owned();
+    }
+
+    svg.contains("<svg").then_some(svg)
 }
 
 struct CodeBlockCapture {

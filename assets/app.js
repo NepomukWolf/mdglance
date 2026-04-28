@@ -22,6 +22,7 @@ linkHintsLayer.className = "link-hints hidden";
 document.body.append(linkHintsLayer);
 
 const state = {
+  documentKind: initialState.document_kind,
   focusMode: "document",
   tocVisible: config.toc.visible_on_start,
   tocItems: [],
@@ -36,6 +37,18 @@ const state = {
   linkHintMode: false,
   linkHintQuery: "",
   linkHints: [],
+  svg: {
+    viewport: null,
+    stage: null,
+    root: null,
+    baseWidth: 0,
+    baseHeight: 0,
+    scale: 1,
+    minScale: 0.1,
+    maxScale: 24,
+    offsetX: 0,
+    offsetY: 0,
+  },
 };
 
 const ACTIONS = [
@@ -58,10 +71,15 @@ const ACTIONS = [
   { id: "toggle_focus", description: "Switch focus between document and table of contents" },
   { id: "back", description: "Back to previous markdown file" },
   { id: "forward", description: "Forward to later markdown file" },
+  { id: "previous_file", description: "Previous file in viewer queue" },
+  { id: "next_file", description: "Next file in viewer queue" },
   { id: "open_link_hints", description: "Open keyboard link hints" },
   { id: "toc_down", description: "TOC: next heading" },
   { id: "toc_up", description: "TOC: previous heading" },
   { id: "activate_selection", description: "TOC: jump to selected heading" },
+  { id: "zoom_in", description: "SVG: zoom in" },
+  { id: "zoom_out", description: "SVG: zoom out" },
+  { id: "reset_view", description: "SVG: reset view" },
   { id: "quit", description: "Quit" },
 ];
 
@@ -71,7 +89,6 @@ const orderedBindings = config.keybindings.flatMap((binding) =>
 );
 
 const GLOBAL_ACTIONS = new Set(["quit", "show_help", "toggle_toc", "close_overlay"]);
-const HELP_ACTIONS = new Set(["show_help", "close_overlay", "quit"]);
 const SEARCH_ACTIONS = new Set(["accept_search", "close_overlay", "quit"]);
 const DOCUMENT_ACTIONS = new Set([
   "scroll_down",
@@ -87,6 +104,8 @@ const DOCUMENT_ACTIONS = new Set([
   "toggle_focus",
   "back",
   "forward",
+  "previous_file",
+  "next_file",
   "open_link_hints",
 ]);
 const TOC_ACTIONS = new Set([
@@ -94,11 +113,41 @@ const TOC_ACTIONS = new Set([
   "toc_up",
   "activate_selection",
   "toggle_focus",
+  "previous_file",
+  "next_file",
+]);
+const HELP_ACTIONS = new Set([
+  "show_help",
+  "close_overlay",
+  "quit",
+  "scroll_down",
+  "scroll_up",
+  "half_page_down",
+  "half_page_up",
+  "page_down",
+  "top",
+  "bottom",
+]);
+const SVG_ACTIONS = new Set([
+  "scroll_down",
+  "scroll_up",
+  "scroll_left",
+  "scroll_right",
+  "previous_file",
+  "next_file",
+  "zoom_in",
+  "zoom_out",
+  "reset_view",
 ]);
 
-function allowedActionsFor(mode) {
+function allowedActionsFor() {
   const allowed = new Set(GLOBAL_ACTIONS);
-  const source = mode === "toc" ? TOC_ACTIONS : DOCUMENT_ACTIONS;
+  const source =
+    state.documentKind === "svg"
+      ? SVG_ACTIONS
+      : state.focusMode === "toc"
+        ? TOC_ACTIONS
+        : DOCUMENT_ACTIONS;
   for (const action of source) {
     allowed.add(action);
   }
@@ -114,47 +163,61 @@ async function renderMermaid() {
 }
 
 window.__mdglanceUpdate = async function (payload) {
-  const scrollRatio =
-    window.scrollY / Math.max(1, document.body.scrollHeight - window.innerHeight);
+  const scrollRatio = currentScrollRatio();
   const previousSelection = state.tocSelectionId;
 
+  state.documentKind = payload.document_kind;
   document.title = "mdglance - " + payload.title;
   content.innerHTML = payload.body;
   setTocItems(payload.toc);
-  await renderMermaid();
+  if (state.documentKind === "markdown") {
+    await renderMermaid();
+  } else {
+    closeLinkHints();
+    closeSearch(true);
+    state.focusMode = "document";
+    state.tocVisible = false;
+    bindSvgViewer();
+  }
 
-  if (state.searchQuery) {
+  if (state.documentKind === "markdown" && state.searchQuery) {
     highlightSearch(state.searchQuery);
   }
 
-  window.scrollTo(
-    0,
-    scrollRatio * Math.max(1, document.body.scrollHeight - window.innerHeight),
-  );
-
-  refreshHeadings();
-  syncActiveHeading();
-
-  if (state.focusMode === "toc" && previousSelection && state.tocIndex.has(previousSelection)) {
-    state.tocSelectionId = previousSelection;
-  } else if (state.focusMode === "toc") {
-    alignTocSelectionToActive();
-  }
-
-  if (payload.anchor) {
-    jumpToAnchor(payload.anchor);
-  } else if (typeof payload.scroll_ratio === "number") {
+  if (state.documentKind === "markdown") {
     window.scrollTo(
       0,
-      payload.scroll_ratio * Math.max(1, document.body.scrollHeight - window.innerHeight),
+      scrollRatio * Math.max(1, document.body.scrollHeight - window.innerHeight),
     );
+
+    refreshHeadings();
+    syncActiveHeading();
+
+    if (state.focusMode === "toc" && previousSelection && state.tocIndex.has(previousSelection)) {
+      state.tocSelectionId = previousSelection;
+    } else if (state.focusMode === "toc") {
+      alignTocSelectionToActive();
+    }
+
+    if (payload.anchor) {
+      jumpToAnchor(payload.anchor);
+    } else if (typeof payload.scroll_ratio === "number") {
+      window.scrollTo(
+        0,
+        payload.scroll_ratio * Math.max(1, document.body.scrollHeight - window.innerHeight),
+      );
+    }
+  } else {
+    resetSvgView();
   }
 
   updateTocState();
 };
 
 window.__mdglanceShowError = function (message) {
+  state.documentKind = "markdown";
   content.innerHTML = `<pre class="error">${message}</pre>`;
+  resetSvgBindings();
 };
 
 window.__mdglanceJumpToAnchor = function (payload) {
@@ -347,6 +410,9 @@ function sendIpc(message) {
 }
 
 function currentScrollRatio() {
+  if (state.documentKind === "svg") {
+    return 0;
+  }
   return window.scrollY / Math.max(1, document.body.scrollHeight - window.innerHeight);
 }
 
@@ -358,6 +424,16 @@ function jumpToAnchor(anchor) {
 }
 
 function setTocItems(items) {
+  if (state.documentKind === "svg") {
+    state.tocItems = [];
+    state.tocIndex = new Map();
+    state.activeHeadingId = null;
+    state.activeTocId = null;
+    state.tocSelectionId = null;
+    renderToc();
+    return;
+  }
+
   const normalized = items.map((item) => ({
     ...item,
     parentId: null,
@@ -434,10 +510,12 @@ function renderToc() {
 }
 
 function updateTocState() {
-  document.body.classList.toggle("toc-visible", state.tocVisible);
+  const tocVisible = state.documentKind === "markdown" && state.tocVisible;
+  document.body.classList.toggle("toc-visible", tocVisible);
   document.body.classList.toggle("toc-focus", state.focusMode === "toc");
   document.body.classList.toggle("document-focus", state.focusMode === "document");
   document.body.classList.toggle("link-hint-mode", state.linkHintMode);
+  document.body.classList.toggle("svg-mode", state.documentKind === "svg");
 
   for (const row of tocNav.querySelectorAll(".toc-item")) {
     const id = row.dataset.id;
@@ -451,6 +529,11 @@ function updateTocState() {
 }
 
 function refreshHeadings() {
+  if (state.documentKind !== "markdown") {
+    state.headingNodes = [];
+    return;
+  }
+
   state.headingNodes = Array.from(content.querySelectorAll("[data-mdglance-heading]")).map(
     (node) => ({
       id: node.id,
@@ -461,6 +544,13 @@ function refreshHeadings() {
 }
 
 function syncActiveHeading() {
+  if (state.documentKind !== "markdown") {
+    state.activeHeadingId = null;
+    state.activeTocId = null;
+    updateTocState();
+    return;
+  }
+
   if (state.headingNodes.length === 0) {
     state.activeHeadingId = null;
     state.activeTocId = null;
@@ -521,6 +611,10 @@ function ensureSelectedRowVisible() {
 }
 
 function switchFocus(nextMode) {
+  if (state.documentKind !== "markdown") {
+    return false;
+  }
+
   if (nextMode === "toc") {
     if (state.tocItems.length === 0) {
       return false;
@@ -541,6 +635,10 @@ function switchFocus(nextMode) {
 }
 
 function toggleTocVisibility() {
+  if (state.documentKind !== "markdown") {
+    return false;
+  }
+
   if (state.tocVisible) {
     state.tocVisible = false;
     if (state.focusMode === "toc") {
@@ -577,6 +675,10 @@ function moveTocSelection(offset) {
 }
 
 function jumpToHeading(id, switchBackToDocument) {
+  if (state.documentKind !== "markdown") {
+    return false;
+  }
+
   const target = document.getElementById(id);
   if (!target) {
     return false;
@@ -594,7 +696,7 @@ function jumpToHeading(id, switchBackToDocument) {
   return true;
 }
 
-function isMarkdownHref(href) {
+function isPreviewableHref(href) {
   return href === "#" || href.endsWith(".md") || href.includes(".md#");
 }
 
@@ -613,7 +715,7 @@ function activateLinkElement(link) {
     return true;
   }
 
-  if (isMarkdownHref(href)) {
+  if (isPreviewableHref(href)) {
     sendIpc({ type: "open_markdown", href, scroll_ratio: currentScrollRatio() });
     return true;
   }
@@ -726,30 +828,95 @@ function handleLinkHintKey(event) {
 function performAction(action) {
   const line = Math.max(48, Math.round(window.innerHeight * 0.08));
   const page = Math.max(120, Math.round(window.innerHeight * 0.82));
+  const svgStep = svgPanStep();
+  const helpOpen = !helpOverlay.classList.contains("hidden");
+  const helpScroll = (delta) => {
+    const panel = helpOverlay.querySelector(".help-panel");
+    if (!panel) {
+      return false;
+    }
+    panel.scrollBy({ top: delta, behavior: "instant" });
+    return true;
+  };
 
   switch (action) {
     case "scroll_down":
+      if (helpOpen) {
+        return helpScroll(line);
+      }
+      if (state.documentKind === "svg") {
+        return panSvgBy(0, -svgStep);
+      }
       window.scrollBy({ top: line, behavior: "instant" });
       return true;
     case "scroll_up":
+      if (helpOpen) {
+        return helpScroll(-line);
+      }
+      if (state.documentKind === "svg") {
+        return panSvgBy(0, svgStep);
+      }
       window.scrollBy({ top: -line, behavior: "instant" });
       return true;
+    case "scroll_left":
+      return state.documentKind === "svg" ? panSvgBy(svgStep, 0) : false;
+    case "scroll_right":
+      return state.documentKind === "svg" ? panSvgBy(-svgStep, 0) : false;
+    case "zoom_in":
+      return zoomSvgBy(1.2);
+    case "zoom_out":
+      return zoomSvgBy(1 / 1.2);
+    case "reset_view":
+      return resetSvgView();
     case "half_page_down":
+      if (helpOpen) {
+        return helpScroll(page / 2);
+      }
+      if (state.documentKind === "svg") {
+        return false;
+      }
       window.scrollBy({ top: page / 2, behavior: "instant" });
       return true;
     case "half_page_up":
+      if (helpOpen) {
+        return helpScroll(-page / 2);
+      }
+      if (state.documentKind === "svg") {
+        return false;
+      }
       window.scrollBy({ top: -page / 2, behavior: "instant" });
       return true;
     case "page_down":
+      if (helpOpen) {
+        return helpScroll(page);
+      }
+      if (state.documentKind === "svg") {
+        return false;
+      }
       window.scrollBy({ top: page, behavior: "instant" });
       return true;
     case "top":
+      if (helpOpen) {
+        return helpScroll(-Number.MAX_SAFE_INTEGER);
+      }
+      if (state.documentKind === "svg") {
+        return false;
+      }
       window.scrollTo({ top: 0, behavior: "instant" });
       return true;
     case "bottom":
+      if (helpOpen) {
+        return helpScroll(Number.MAX_SAFE_INTEGER);
+      }
+      if (state.documentKind === "svg") {
+        return false;
+      }
       window.scrollTo({ top: document.body.scrollHeight, behavior: "instant" });
       return true;
     case "open_search":
+      if (state.documentKind !== "markdown") {
+        return false;
+      }
       openSearch();
       return true;
     case "accept_search":
@@ -778,15 +945,32 @@ function performAction(action) {
     case "toggle_toc":
       return toggleTocVisibility();
     case "toggle_focus":
-      return switchFocus(state.focusMode === "document" ? "toc" : "document");
+      return state.documentKind === "markdown"
+        ? switchFocus(state.focusMode === "document" ? "toc" : "document")
+        : false;
     case "back":
+      if (state.documentKind !== "markdown") {
+        return false;
+      }
       sendIpc({ type: "back", scroll_ratio: currentScrollRatio() });
       return true;
     case "forward":
+      if (state.documentKind !== "markdown") {
+        return false;
+      }
       sendIpc({ type: "forward", scroll_ratio: currentScrollRatio() });
       return true;
     case "open_link_hints":
+      if (state.documentKind !== "markdown") {
+        return false;
+      }
       return openLinkHints();
+    case "previous_file":
+      sendIpc({ type: "previous_file", scroll_ratio: currentScrollRatio() });
+      return true;
+    case "next_file":
+      sendIpc({ type: "next_file", scroll_ratio: currentScrollRatio() });
+      return true;
     case "toc_down":
       return moveTocSelection(1);
     case "toc_up":
@@ -840,7 +1024,7 @@ window.addEventListener("keydown", (event) => {
     return;
   }
 
-  const action = findAction(event, allowedActionsFor(state.focusMode));
+  const action = findAction(event, allowedActionsFor());
   if (!action) {
     return;
   }
@@ -869,9 +1053,142 @@ window.addEventListener(
   { passive: true },
 );
 
+window.addEventListener("resize", () => {
+  if (state.documentKind === "svg") {
+    resetSvgView();
+  }
+});
+
 setTocItems(initialState.toc);
 renderHelp();
 refreshHeadings();
 syncActiveHeading();
 updateTocState();
-renderMermaid();
+if (state.documentKind === "svg") {
+  bindSvgViewer();
+  resetSvgView();
+} else {
+  renderMermaid();
+}
+
+function resetSvgBindings() {
+  state.svg.viewport = null;
+  state.svg.stage = null;
+  state.svg.root = null;
+  state.svg.baseWidth = 0;
+  state.svg.baseHeight = 0;
+  state.svg.scale = 1;
+  state.svg.minScale = 0.1;
+  state.svg.maxScale = 24;
+  state.svg.offsetX = 0;
+  state.svg.offsetY = 0;
+}
+
+function bindSvgViewer() {
+  resetSvgBindings();
+  state.svg.viewport = document.getElementById("svg-viewport");
+  state.svg.stage = document.getElementById("svg-stage");
+  state.svg.root = state.svg.stage?.querySelector("svg") ?? null;
+
+  if (!state.svg.viewport || !state.svg.stage || !state.svg.root) {
+    return false;
+  }
+
+  const size = measureSvgRoot(state.svg.root);
+  state.svg.baseWidth = size.width;
+  state.svg.baseHeight = size.height;
+  state.svg.stage.style.width = `${size.width}px`;
+  state.svg.stage.style.height = `${size.height}px`;
+  return true;
+}
+
+function measureSvgRoot(root) {
+  const viewBox = root.viewBox?.baseVal;
+  if (viewBox && viewBox.width > 0 && viewBox.height > 0) {
+    return { width: viewBox.width, height: viewBox.height };
+  }
+
+  const width = root.width?.baseVal?.value;
+  const height = root.height?.baseVal?.value;
+  if (width > 0 && height > 0) {
+    return { width, height };
+  }
+
+  const bbox = root.getBBox?.();
+  if (bbox && bbox.width > 0 && bbox.height > 0) {
+    return { width: bbox.width, height: bbox.height };
+  }
+
+  const rect = root.getBoundingClientRect();
+  return {
+    width: Math.max(rect.width, 1),
+    height: Math.max(rect.height, 1),
+  };
+}
+
+function applySvgTransform() {
+  if (!state.svg.stage) {
+    return false;
+  }
+
+  state.svg.stage.style.transform = `translate(${state.svg.offsetX}px, ${state.svg.offsetY}px) scale(${state.svg.scale})`;
+  return true;
+}
+
+function resetSvgView() {
+  if (!state.svg.viewport || !state.svg.stage || state.svg.baseWidth <= 0 || state.svg.baseHeight <= 0) {
+    return false;
+  }
+
+  const viewportWidth = Math.max(state.svg.viewport.clientWidth, 1);
+  const viewportHeight = Math.max(state.svg.viewport.clientHeight, 1);
+  const fitScale = Math.min(
+    viewportWidth / state.svg.baseWidth,
+    viewportHeight / state.svg.baseHeight,
+  );
+
+  state.svg.scale = Number.isFinite(fitScale) && fitScale > 0 ? fitScale : 1;
+  state.svg.minScale = Math.max(Math.min(state.svg.scale * 0.25, state.svg.scale), 0.05);
+  state.svg.maxScale = Math.max(state.svg.scale * 12, 8);
+  state.svg.offsetX = (viewportWidth - state.svg.baseWidth * state.svg.scale) / 2;
+  state.svg.offsetY = (viewportHeight - state.svg.baseHeight * state.svg.scale) / 2;
+  return applySvgTransform();
+}
+
+function svgPanStep() {
+  return Math.max(48, 96 / Math.max(state.svg.scale, 0.1));
+}
+
+function panSvgBy(deltaX, deltaY) {
+  if (!state.svg.stage) {
+    return false;
+  }
+
+  state.svg.offsetX += deltaX;
+  state.svg.offsetY += deltaY;
+  return applySvgTransform();
+}
+
+function zoomSvgBy(factor) {
+  if (!state.svg.viewport || !state.svg.stage) {
+    return false;
+  }
+
+  const nextScale = Math.min(
+    state.svg.maxScale,
+    Math.max(state.svg.minScale, state.svg.scale * factor),
+  );
+  if (nextScale === state.svg.scale) {
+    return false;
+  }
+
+  const centerX = state.svg.viewport.clientWidth / 2;
+  const centerY = state.svg.viewport.clientHeight / 2;
+  const contentX = (centerX - state.svg.offsetX) / state.svg.scale;
+  const contentY = (centerY - state.svg.offsetY) / state.svg.scale;
+
+  state.svg.scale = nextScale;
+  state.svg.offsetX = centerX - contentX * state.svg.scale;
+  state.svg.offsetY = centerY - contentY * state.svg.scale;
+  return applySvgTransform();
+}
