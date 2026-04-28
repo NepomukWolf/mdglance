@@ -403,10 +403,7 @@ fn external_url(url: &str) -> Option<Url> {
 }
 
 fn open_external_url(url: &str) -> Result<()> {
-    std::process::Command::new("open")
-        .arg(url)
-        .spawn()
-        .with_context(|| format!("failed to launch browser for {url}"))?;
+    open::that(url).with_context(|| format!("failed to open external URL {url}"))?;
     Ok(())
 }
 

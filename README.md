@@ -170,7 +170,8 @@ open_link_hints = ["f"]
 toc_down = ["j"]
 toc_up = ["k"]
 activate_selection = ["Enter"]
-quit = ["q", "Cmd+W", "Cmd+Q"]
+quit = ["q"]
 ```
 
 When you set a keybinding entry, that action's default bindings are replaced by the list you provide.
+On macOS, the built-in defaults also include `Cmd+W` and `Cmd+Q`.

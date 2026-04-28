@@ -425,8 +425,18 @@ fn default_keybindings() -> Vec<(Action, Vec<&'static str>)> {
         (Action::TocDown, vec!["j"]),
         (Action::TocUp, vec!["k"]),
         (Action::ActivateSelection, vec!["Enter"]),
-        (Action::Quit, vec!["q", "Cmd+W", "Cmd+Q"]),
+        (Action::Quit, default_quit_bindings()),
     ]
+}
+
+#[cfg(target_os = "macos")]
+fn default_quit_bindings() -> Vec<&'static str> {
+    vec!["q", "Cmd+W", "Cmd+Q"]
+}
+
+#[cfg(not(target_os = "macos"))]
+fn default_quit_bindings() -> Vec<&'static str> {
+    vec!["q"]
 }
 
 fn parse_shortcut(input: &str) -> Result<KeyBinding> {
