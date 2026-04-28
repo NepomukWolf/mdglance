@@ -26,6 +26,10 @@ body {
   min-height: 100vh;
 }
 
+body.svg-mode .app-shell {
+  display: block;
+}
+
 .toc-panel {
   display: none;
   position: sticky;
@@ -162,6 +166,15 @@ main {
   transition: background-color 120ms ease;
 }
 
+body.svg-mode main {
+  max-width: none;
+  margin: 0;
+  padding: 16px;
+  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
+}
+
 main:focus,
 .toc-panel:focus {
   outline: none;
@@ -251,6 +264,31 @@ svg {
 .diagram-block svg {
   display: block;
   height: auto;
+}
+
+.svg-shell {
+  width: 100%;
+  height: 100%;
+}
+
+.svg-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.svg-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+.svg-stage > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .hud {

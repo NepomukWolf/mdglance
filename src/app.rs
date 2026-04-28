@@ -119,6 +119,7 @@ pub fn run(file: PathBuf) -> Result<()> {
                             "title": display_name(&current_file),
                             "body": rendered.body,
                             "toc": rendered.toc,
+                            "document_kind": rendered.document_kind,
                         });
                         let script = format!("window.__mdglanceUpdate({payload});");
                         if let Err(err) = webview.evaluate_script(&script) {
@@ -354,6 +355,7 @@ fn open_file(
         "title": display_name(current_file),
         "body": rendered.body,
         "toc": rendered.toc,
+        "document_kind": rendered.document_kind,
         "anchor": anchor,
         "scroll_ratio": scroll_positions.get(current_file).copied().unwrap_or(0.0),
     });

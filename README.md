@@ -1,12 +1,12 @@
 # mdglance
 
-`mdglance` is a small native Markdown previewer for terminal-first workflows.
+`mdglance` is a small native document previewer for terminal-first workflows.
 
-It opens an arbitrary Markdown file in a native macOS window, renders the document read-only, and refreshes when the source file changes. The intended loop is simple: write in a terminal editor, save, and glance at a rendered document without opening a full editor or browser workspace. The app is designed to stay keyboard-first: navigation, search, TOC use, link following, and history are all available without touching the mouse.
+It opens a Markdown or SVG file in a native window, renders the document read-only, and refreshes when the source file changes. The intended loop is simple: write in a terminal editor, save, and glance at the rendered result without opening a full editor or browser workspace. The app is designed to stay keyboard-first: navigation, search, TOC use, link following, history, and SVG pan/zoom are all available without touching the mouse.
 
 ## Status
 
-This is still an early prototype, but it is already usable as a keyboard-first Markdown viewer for terminal workflows.
+This is still an early prototype, but it is already usable as a keyboard-first Markdown and SVG viewer for terminal workflows.
 
 [Mermaid](https://mermaid.js.org/) is bundled into the binary at compile time from `assets/mermaid.min.js`, so Mermaid rendering does not require runtime network access. [PlantUML](https://plantuml.com/) blocks are rendered locally through the `plantuml` CLI when it is available. Do not treat this as a hardened renderer for untrusted Markdown yet.
 
@@ -47,6 +47,7 @@ cargo build
 - In-viewer navigation for relative `.md` links with back/forward history.
 - Keyboard link hints for opening visible links quickly.
 - Per-document scroll memory while moving between Markdown files.
+- Native SVG preview mode with fit-to-window, pan, zoom, and reset view.
 - Syntax highlighting for fenced code blocks with explicit language tags.
 - [Mermaid](https://mermaid.js.org/) diagram rendering without runtime network access.
 - Local [PlantUML](https://plantuml.com/) diagram rendering through the `plantuml` CLI, with graceful fallback to code blocks when unavailable or rendering fails.
@@ -61,6 +62,11 @@ cargo build
 | `d` / `u` | Half page down / up                           |
 | `Space`   | Page down                                     |
 | `g` / `G` | Top / bottom                                  |
+| `h` / `l` | SVG mode: pan left / right                    |
+| `j` / `k` | SVG mode: pan down / up                       |
+| `=` / `+` | SVG mode: zoom in                             |
+| `-`       | SVG mode: zoom out                            |
+| `0`       | SVG mode: reset fitted view                   |
 | `/`       | Open search                                   |
 | `n` / `N` | Next / previous search hit                    |
 | `f`       | Open keyboard link hints                      |
@@ -92,6 +98,16 @@ Alice -> Bob: hello
 @enduml
 ```
 ````
+
+## SVG Preview
+
+Open an SVG file directly to preview it with fit-to-window scaling:
+
+```sh
+cargo run -- examples/diagram.svg
+```
+
+In SVG mode, Markdown-specific features such as TOC, search, and link navigation are disabled. The dedicated SVG controls are pan with `h` `j` `k` `l`, zoom with `=`/`+` and `-`, and reset view with `0`.
 
 ## Security Notes
 
@@ -151,6 +167,8 @@ fullscreen = false
 [keybindings]
 scroll_down = ["j"]
 scroll_up = ["k"]
+scroll_left = ["h"]
+scroll_right = ["l"]
 half_page_down = ["d"]
 half_page_up = ["u"]
 page_down = ["Space"]
@@ -170,6 +188,9 @@ open_link_hints = ["f"]
 toc_down = ["j"]
 toc_up = ["k"]
 activate_selection = ["Enter"]
+zoom_in = ["=", "Shift+="]
+zoom_out = ["-"]
+reset_view = ["0"]
 quit = ["q"]
 ```
 

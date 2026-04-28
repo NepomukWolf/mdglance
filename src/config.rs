@@ -14,6 +14,7 @@ const SCOPE_DOCUMENT: u8 = 1 << 1;
 const SCOPE_SEARCH: u8 = 1 << 2;
 const SCOPE_TOC: u8 = 1 << 3;
 const SCOPE_HELP: u8 = 1 << 4;
+const SCOPE_SVG: u8 = 1 << 5;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -40,6 +41,8 @@ pub struct TocConfig {
 pub enum Action {
     ScrollDown,
     ScrollUp,
+    ScrollLeft,
+    ScrollRight,
     HalfPageDown,
     HalfPageUp,
     PageDown,
@@ -59,6 +62,9 @@ pub enum Action {
     TocDown,
     TocUp,
     ActivateSelection,
+    ZoomIn,
+    ZoomOut,
+    ResetView,
     Quit,
 }
 
@@ -273,6 +279,8 @@ impl Action {
         &[
             Action::ScrollDown,
             Action::ScrollUp,
+            Action::ScrollLeft,
+            Action::ScrollRight,
             Action::HalfPageDown,
             Action::HalfPageUp,
             Action::PageDown,
@@ -292,6 +300,9 @@ impl Action {
             Action::TocDown,
             Action::TocUp,
             Action::ActivateSelection,
+            Action::ZoomIn,
+            Action::ZoomOut,
+            Action::ResetView,
             Action::Quit,
         ]
     }
@@ -300,6 +311,8 @@ impl Action {
         Some(match value {
             "scroll_down" => Action::ScrollDown,
             "scroll_up" => Action::ScrollUp,
+            "scroll_left" => Action::ScrollLeft,
+            "scroll_right" => Action::ScrollRight,
             "half_page_down" => Action::HalfPageDown,
             "half_page_up" => Action::HalfPageUp,
             "page_down" => Action::PageDown,
@@ -319,6 +332,9 @@ impl Action {
             "toc_down" => Action::TocDown,
             "toc_up" => Action::TocUp,
             "activate_selection" => Action::ActivateSelection,
+            "zoom_in" => Action::ZoomIn,
+            "zoom_out" => Action::ZoomOut,
+            "reset_view" => Action::ResetView,
             "quit" => Action::Quit,
             _ => return None,
         })
@@ -328,6 +344,8 @@ impl Action {
         match self {
             Action::ScrollDown => "scroll_down",
             Action::ScrollUp => "scroll_up",
+            Action::ScrollLeft => "scroll_left",
+            Action::ScrollRight => "scroll_right",
             Action::HalfPageDown => "half_page_down",
             Action::HalfPageUp => "half_page_up",
             Action::PageDown => "page_down",
@@ -347,6 +365,9 @@ impl Action {
             Action::TocDown => "toc_down",
             Action::TocUp => "toc_up",
             Action::ActivateSelection => "activate_selection",
+            Action::ZoomIn => "zoom_in",
+            Action::ZoomOut => "zoom_out",
+            Action::ResetView => "reset_view",
             Action::Quit => "quit",
         }
     }
@@ -358,9 +379,9 @@ impl Action {
             Action::CloseOverlay => SCOPE_SEARCH | SCOPE_HELP,
             Action::AcceptSearch => SCOPE_SEARCH,
             Action::TocDown | Action::TocUp | Action::ActivateSelection => SCOPE_TOC,
-            Action::ScrollDown
-            | Action::ScrollUp
-            | Action::HalfPageDown
+            Action::ScrollDown | Action::ScrollUp => SCOPE_DOCUMENT | SCOPE_SVG,
+            Action::ScrollLeft | Action::ScrollRight => SCOPE_SVG,
+            Action::HalfPageDown
             | Action::HalfPageUp
             | Action::PageDown
             | Action::Top
@@ -371,6 +392,7 @@ impl Action {
             | Action::Back
             | Action::Forward
             | Action::OpenLinkHints => SCOPE_DOCUMENT,
+            Action::ZoomIn | Action::ZoomOut | Action::ResetView => SCOPE_SVG,
         }
     }
 }
@@ -406,6 +428,8 @@ fn default_keybindings() -> Vec<(Action, Vec<&'static str>)> {
     vec![
         (Action::ScrollDown, vec!["j"]),
         (Action::ScrollUp, vec!["k"]),
+        (Action::ScrollLeft, vec!["h"]),
+        (Action::ScrollRight, vec!["l"]),
         (Action::HalfPageDown, vec!["d"]),
         (Action::HalfPageUp, vec!["u"]),
         (Action::PageDown, vec!["Space"]),
@@ -425,6 +449,9 @@ fn default_keybindings() -> Vec<(Action, Vec<&'static str>)> {
         (Action::TocDown, vec!["j"]),
         (Action::TocUp, vec!["k"]),
         (Action::ActivateSelection, vec!["Enter"]),
+        (Action::ZoomIn, vec!["=", "Shift+="]),
+        (Action::ZoomOut, vec!["-"]),
+        (Action::ResetView, vec!["0"]),
         (Action::Quit, default_quit_bindings()),
     ]
 }
