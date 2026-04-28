@@ -89,7 +89,6 @@ const orderedBindings = config.keybindings.flatMap((binding) =>
 );
 
 const GLOBAL_ACTIONS = new Set(["quit", "show_help", "toggle_toc", "close_overlay"]);
-const HELP_ACTIONS = new Set(["show_help", "close_overlay", "quit"]);
 const SEARCH_ACTIONS = new Set(["accept_search", "close_overlay", "quit"]);
 const DOCUMENT_ACTIONS = new Set([
   "scroll_down",
@@ -116,6 +115,18 @@ const TOC_ACTIONS = new Set([
   "toggle_focus",
   "previous_file",
   "next_file",
+]);
+const HELP_ACTIONS = new Set([
+  "show_help",
+  "close_overlay",
+  "quit",
+  "scroll_down",
+  "scroll_up",
+  "half_page_down",
+  "half_page_up",
+  "page_down",
+  "top",
+  "bottom",
 ]);
 const SVG_ACTIONS = new Set([
   "scroll_down",
@@ -818,15 +829,30 @@ function performAction(action) {
   const line = Math.max(48, Math.round(window.innerHeight * 0.08));
   const page = Math.max(120, Math.round(window.innerHeight * 0.82));
   const svgStep = svgPanStep();
+  const helpOpen = !helpOverlay.classList.contains("hidden");
+  const helpScroll = (delta) => {
+    const panel = helpOverlay.querySelector(".help-panel");
+    if (!panel) {
+      return false;
+    }
+    panel.scrollBy({ top: delta, behavior: "instant" });
+    return true;
+  };
 
   switch (action) {
     case "scroll_down":
+      if (helpOpen) {
+        return helpScroll(line);
+      }
       if (state.documentKind === "svg") {
         return panSvgBy(0, -svgStep);
       }
       window.scrollBy({ top: line, behavior: "instant" });
       return true;
     case "scroll_up":
+      if (helpOpen) {
+        return helpScroll(-line);
+      }
       if (state.documentKind === "svg") {
         return panSvgBy(0, svgStep);
       }
@@ -843,30 +869,45 @@ function performAction(action) {
     case "reset_view":
       return resetSvgView();
     case "half_page_down":
+      if (helpOpen) {
+        return helpScroll(page / 2);
+      }
       if (state.documentKind === "svg") {
         return false;
       }
       window.scrollBy({ top: page / 2, behavior: "instant" });
       return true;
     case "half_page_up":
+      if (helpOpen) {
+        return helpScroll(-page / 2);
+      }
       if (state.documentKind === "svg") {
         return false;
       }
       window.scrollBy({ top: -page / 2, behavior: "instant" });
       return true;
     case "page_down":
+      if (helpOpen) {
+        return helpScroll(page);
+      }
       if (state.documentKind === "svg") {
         return false;
       }
       window.scrollBy({ top: page, behavior: "instant" });
       return true;
     case "top":
+      if (helpOpen) {
+        return helpScroll(-Number.MAX_SAFE_INTEGER);
+      }
       if (state.documentKind === "svg") {
         return false;
       }
       window.scrollTo({ top: 0, behavior: "instant" });
       return true;
     case "bottom":
+      if (helpOpen) {
+        return helpScroll(Number.MAX_SAFE_INTEGER);
+      }
       if (state.documentKind === "svg") {
         return false;
       }
