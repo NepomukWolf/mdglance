@@ -328,21 +328,29 @@ svg {
   display: grid;
   place-items: center;
   overflow: hidden;
-  padding: 16px;
+  padding: 2px;
+}
+
+.presentation-stage-frame {
+  position: relative;
+  overflow: hidden;
 }
 
 .presentation-stage {
   --presentation-stage-scale: 1;
+  position: absolute;
+  inset: 0 auto auto 0;
   width: 1600px;
   height: 900px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 24px;
-  padding: 42px 60px 36px;
+  gap: 16px;
+  padding: 18px 24px 14px;
+  border: 1px solid color-mix(in srgb, CanvasText 24%, transparent);
   background: Canvas;
   color: CanvasText;
   transform: scale(var(--presentation-stage-scale));
-  transform-origin: center center;
+  transform-origin: top left;
 }
 
 .presentation-chrome {

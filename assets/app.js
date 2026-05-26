@@ -810,22 +810,24 @@ function renderPresentationSlides() {
     section.dataset.slideIndex = String(slide.index);
     section.innerHTML = `
       <div class="presentation-shell">
-        <article class="presentation-stage">
-          <header class="presentation-chrome presentation-header${state.presentation.header ? "" : " hidden"}">
-            ${header}
-          </header>
-          <div class="presentation-body-viewport">
-            <div class="presentation-body-scale">
-              <div class="presentation-slide-body">${slide.body}</div>
+        <div class="presentation-stage-frame">
+          <article class="presentation-stage">
+            <header class="presentation-chrome presentation-header${state.presentation.header ? "" : " hidden"}">
+              ${header}
+            </header>
+            <div class="presentation-body-viewport">
+              <div class="presentation-body-scale">
+                <div class="presentation-slide-body">${slide.body}</div>
+              </div>
             </div>
-          </div>
-          <footer class="presentation-chrome presentation-footer${
-            state.presentation.footer || state.presentation.pageNumbers ? "" : " hidden"
-          }">
-            <span class="presentation-footer-text${state.presentation.footer ? "" : " hidden"}">${footer}</span>
-            <span class="presentation-page-number${state.presentation.pageNumbers ? "" : " hidden"}">${slide.index + 1} / ${totalSlides}</span>
-          </footer>
-        </article>
+            <footer class="presentation-chrome presentation-footer${
+              state.presentation.footer || state.presentation.pageNumbers ? "" : " hidden"
+            }">
+              <span class="presentation-footer-text${state.presentation.footer ? "" : " hidden"}">${footer}</span>
+              <span class="presentation-page-number${state.presentation.pageNumbers ? "" : " hidden"}">${slide.index + 1} / ${totalSlides}</span>
+            </footer>
+          </article>
+        </div>
       </div>`;
     return section;
   });
@@ -871,21 +873,23 @@ function showPresentationSlide(index) {
 
 function fitPresentationStage(slide) {
   const shell = slide.querySelector(".presentation-shell");
+  const frame = slide.querySelector(".presentation-stage-frame");
   const stage = slide.querySelector(".presentation-stage");
   const viewport = slide.querySelector(".presentation-body-viewport");
   const scaleBox = slide.querySelector(".presentation-body-scale");
   const body = slide.querySelector(".presentation-slide-body");
-  if (!shell || !stage || !viewport || !scaleBox || !body) {
+  if (!shell || !frame || !stage || !viewport || !scaleBox || !body) {
     return;
   }
 
   const availableWidth = Math.max(1, shell.clientWidth);
   const availableHeight = Math.max(1, shell.clientHeight);
   const stageScale = Math.min(
-    1,
     availableWidth / PRESENTATION_STAGE_WIDTH,
     availableHeight / PRESENTATION_STAGE_HEIGHT,
   );
+  frame.style.width = `${PRESENTATION_STAGE_WIDTH * stageScale}px`;
+  frame.style.height = `${PRESENTATION_STAGE_HEIGHT * stageScale}px`;
   stage.style.setProperty("--presentation-stage-scale", String(stageScale));
 
   body.style.width = `${viewport.clientWidth}px`;
