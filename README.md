@@ -2,7 +2,7 @@
 
 `mdglance` is a small native document previewer for terminal-first workflows.
 
-It opens a Markdown or SVG file in a native window, renders the document read-only, and refreshes when the source file changes. The intended loop is simple: write in a terminal editor, save, and glance at the rendered result without opening a full editor or browser workspace. The app is designed to stay keyboard-first: navigation, search, TOC use, link following, history, and SVG pan/zoom are all available without touching the mouse.
+It opens a Markdown or SVG file in a native window, renders the document read-only, and refreshes when the source file changes. The intended loop is simple: write in a terminal editor, save, and glance at the rendered result without opening a full editor or browser workspace. The app is designed to stay keyboard-first: navigation, search, TOC use, link following, history, presentation slides, and SVG pan/zoom are all available without touching the mouse.
 
 ## Status
 
@@ -54,6 +54,7 @@ cargo build
 - Optional stdin-driven file queue with previous/next navigation.
 - Keyboard link hints for opening visible links quickly.
 - Per-document scroll memory while moving between Markdown files.
+- Built-in Markdown presentation mode with `presentation: true` frontmatter, `---` slide separators, optional header/footer/page numbering, and viewport-fitted 16:9 slides.
 - Native SVG preview mode with fit-to-window, pan, zoom, and reset view.
 - Syntax highlighting for fenced code blocks with explicit language tags.
 - [Mermaid](https://mermaid.js.org/) diagram rendering without runtime network access.
@@ -78,6 +79,9 @@ cargo build
 | `/`       | Open search                                   |
 | `n` / `N` | Next / previous search hit                    |
 | `f`       | Open keyboard link hints                      |
+| `p`       | Toggle between Markdown and presentation mode |
+| `h` / `k` | Presentation mode: previous slide             |
+| `j` / `l` | Presentation mode: next slide                 |
 | `t`       | Toggle table of contents                      |
 | `Tab`     | Switch focus between document and TOC         |
 | `j` / `k` | TOC mode: next / previous heading             |
@@ -96,6 +100,34 @@ flowchart LR
   A[Markdown] --> B[Preview]
 ```
 ````
+
+## Presentations
+
+Presentation files are normal Markdown files with frontmatter at the top:
+
+````markdown
+---
+presentation: true
+presentation_header: mdglance
+presentation_footer: Demo deck
+presentation_page_numbers: true
+---
+
+# Slide One
+
+---
+
+# Slide Two
+````
+
+Open the included example:
+
+```sh
+cargo run -- examples/render-presentation.md
+```
+
+Presentation files open in slide mode by default. Press `p` to toggle between slide mode and normal Markdown mode for the same file.
+Slides use a fixed 16:9 stage and scale to the current viewport. Header, footer, and page numbering are optional and configured through frontmatter.
 
 Fenced [PlantUML](https://plantuml.com/) blocks are rendered locally when the `plantuml` CLI is installed:
 
@@ -200,6 +232,7 @@ show_help = ["?"]
 close_overlay = ["Escape"]
 toggle_toc = ["t"]
 toggle_focus = ["Tab"]
+toggle_presentation = ["p"]
 back = ["h"]
 forward = ["l"]
 previous_file = ["["]

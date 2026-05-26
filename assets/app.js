@@ -9,6 +9,7 @@ const config = window.__MDGLANCE_CONFIG;
 const initialState = window.__MDGLANCE_INITIAL_STATE;
 
 const content = document.getElementById("content");
+const presentationRoot = document.getElementById("presentation-root");
 const tocPanel = document.getElementById("toc-panel");
 const tocNav = document.getElementById("toc-nav");
 const tocEmpty = document.getElementById("toc-empty");
@@ -20,6 +21,8 @@ const helpList = document.getElementById("help-list");
 const linkHintsLayer = document.createElement("div");
 linkHintsLayer.className = "link-hints hidden";
 document.body.append(linkHintsLayer);
+const PRESENTATION_STAGE_WIDTH = 1600;
+const PRESENTATION_STAGE_HEIGHT = 900;
 
 const state = {
   documentKind: initialState.document_kind,
@@ -37,6 +40,15 @@ const state = {
   linkHintMode: false,
   linkHintQuery: "",
   linkHints: [],
+  presentation: {
+    enabled: Boolean(initialState.presentation?.enabled),
+    mode: initialState.presentation?.default_mode ?? "markdown",
+    header: initialState.presentation?.header ?? null,
+    footer: initialState.presentation?.footer ?? null,
+    pageNumbers: Boolean(initialState.presentation?.page_numbers),
+    slides: initialState.presentation?.slides ?? [],
+    currentSlide: 0,
+  },
   svg: {
     viewport: null,
     stage: null,
@@ -69,8 +81,9 @@ const ACTIONS = [
   { id: "close_overlay", description: "Close search or help" },
   { id: "toggle_toc", description: "Show or hide table of contents" },
   { id: "toggle_focus", description: "Switch focus between document and table of contents" },
-  { id: "back", description: "Back to previous markdown file" },
-  { id: "forward", description: "Forward to later markdown file" },
+  { id: "toggle_presentation", description: "Toggle presentation mode" },
+  { id: "back", description: "Back in history or previous slide" },
+  { id: "forward", description: "Forward in history or next slide" },
   { id: "previous_file", description: "Previous file in viewer queue" },
   { id: "next_file", description: "Next file in viewer queue" },
   { id: "open_link_hints", description: "Open keyboard link hints" },
@@ -102,11 +115,26 @@ const DOCUMENT_ACTIONS = new Set([
   "next_search_hit",
   "previous_search_hit",
   "toggle_focus",
+  "toggle_presentation",
   "back",
   "forward",
   "previous_file",
   "next_file",
   "open_link_hints",
+]);
+const PRESENTATION_ACTIONS = new Set([
+  "scroll_down",
+  "scroll_up",
+  "half_page_down",
+  "half_page_up",
+  "page_down",
+  "top",
+  "bottom",
+  "toggle_presentation",
+  "back",
+  "forward",
+  "previous_file",
+  "next_file",
 ]);
 const TOC_ACTIONS = new Set([
   "toc_down",
@@ -145,6 +173,8 @@ function allowedActionsFor() {
   const source =
     state.documentKind === "svg"
       ? SVG_ACTIONS
+      : state.presentation.enabled && state.presentation.mode === "presentation"
+        ? PRESENTATION_ACTIONS
       : state.focusMode === "toc"
         ? TOC_ACTIONS
         : DOCUMENT_ACTIONS;
@@ -154,8 +184,14 @@ function allowedActionsFor() {
   return allowed;
 }
 
-async function renderMermaid() {
-  const nodes = document.querySelectorAll("pre.mermaid");
+async function renderMermaidIn(root) {
+  if (!root) {
+    return;
+  }
+  const nodes = root.querySelectorAll("pre.mermaid");
+  if (nodes.length === 0) {
+    return;
+  }
   for (const node of nodes) {
     node.removeAttribute("data-processed");
   }
@@ -165,47 +201,89 @@ async function renderMermaid() {
 window.__mdglanceUpdate = async function (payload) {
   const scrollRatio = currentScrollRatio();
   const previousSelection = state.tocSelectionId;
+  const wasPresentationEnabled = state.presentation.enabled;
+  const previousMode = state.presentation.mode;
+  const previousSlide = state.presentation.currentSlide;
 
   state.documentKind = payload.document_kind;
+  state.presentation.enabled = Boolean(payload.presentation?.enabled);
+  state.presentation.header = payload.presentation?.header ?? null;
+  state.presentation.footer = payload.presentation?.footer ?? null;
+  state.presentation.pageNumbers = Boolean(payload.presentation?.page_numbers);
+  state.presentation.slides = payload.presentation?.slides ?? [];
+  state.presentation.mode =
+    state.presentation.enabled && wasPresentationEnabled
+      ? previousMode
+      : state.presentation.enabled
+        ? payload.presentation?.default_mode ?? "presentation"
+        : "markdown";
   document.title = "mdglance - " + payload.title;
   content.innerHTML = payload.body;
+  renderPresentationSlides();
   setTocItems(payload.toc);
   if (state.documentKind === "markdown") {
-    await renderMermaid();
+    if (state.presentation.enabled) {
+      state.presentation.currentSlide = wasPresentationEnabled
+        ? Math.min(previousSlide, Math.max(0, state.presentation.slides.length - 1))
+        : 0;
+      syncPresentationMode();
+      if (state.presentation.mode === "presentation") {
+        await preparePresentationSlide(state.presentation.currentSlide);
+      } else {
+        await renderMermaidIn(content);
+      }
+    } else {
+      await renderMermaidIn(content);
+      state.presentation.currentSlide = 0;
+      state.presentation.mode = "markdown";
+      syncPresentationMode();
+    }
   } else {
     closeLinkHints();
     closeSearch(true);
     state.focusMode = "document";
     state.tocVisible = false;
     bindSvgViewer();
+    state.presentation.enabled = false;
+    state.presentation.mode = "markdown";
   }
 
-  if (state.documentKind === "markdown" && state.searchQuery) {
+  if (
+    state.documentKind === "markdown" &&
+    state.presentation.mode !== "presentation" &&
+    state.searchQuery
+  ) {
     highlightSearch(state.searchQuery);
   }
 
   if (state.documentKind === "markdown") {
-    window.scrollTo(
-      0,
-      scrollRatio * Math.max(1, document.body.scrollHeight - window.innerHeight),
-    );
-
-    refreshHeadings();
-    syncActiveHeading();
-
-    if (state.focusMode === "toc" && previousSelection && state.tocIndex.has(previousSelection)) {
-      state.tocSelectionId = previousSelection;
-    } else if (state.focusMode === "toc") {
-      alignTocSelectionToActive();
-    }
-
-    if (payload.anchor) {
-      jumpToAnchor(payload.anchor);
-    } else if (typeof payload.scroll_ratio === "number") {
+    if (state.presentation.mode !== "presentation") {
       window.scrollTo(
         0,
-        payload.scroll_ratio * Math.max(1, document.body.scrollHeight - window.innerHeight),
+        scrollRatio * Math.max(1, document.body.scrollHeight - window.innerHeight),
       );
+
+      refreshHeadings();
+      syncActiveHeading();
+
+      if (state.focusMode === "toc" && previousSelection && state.tocIndex.has(previousSelection)) {
+        state.tocSelectionId = previousSelection;
+      } else if (state.focusMode === "toc") {
+        alignTocSelectionToActive();
+      }
+
+      if (payload.anchor) {
+        jumpToAnchor(payload.anchor);
+      } else if (typeof payload.scroll_ratio === "number") {
+        window.scrollTo(
+          0,
+          payload.scroll_ratio * Math.max(1, document.body.scrollHeight - window.innerHeight),
+        );
+      }
+    } else {
+      refreshHeadings();
+      syncActiveHeading();
+      showPresentationSlide(state.presentation.currentSlide);
     }
   } else {
     resetSvgView();
@@ -216,8 +294,16 @@ window.__mdglanceUpdate = async function (payload) {
 
 window.__mdglanceShowError = function (message) {
   state.documentKind = "markdown";
+  state.presentation.enabled = false;
+  state.presentation.mode = "markdown";
+  state.presentation.header = null;
+  state.presentation.footer = null;
+  state.presentation.pageNumbers = false;
+  state.presentation.slides = [];
+  presentationRoot.replaceChildren();
   content.innerHTML = `<pre class="error">${message}</pre>`;
   resetSvgBindings();
+  syncPresentationMode();
 };
 
 window.__mdglanceJumpToAnchor = function (payload) {
@@ -231,6 +317,15 @@ function normalizeEventKey(event) {
     return event.key.toLowerCase();
   }
   return event.key;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function matchesShortcut(shortcut, event) {
@@ -410,7 +505,7 @@ function sendIpc(message) {
 }
 
 function currentScrollRatio() {
-  if (state.documentKind === "svg") {
+  if (state.documentKind === "svg" || state.presentation.mode === "presentation") {
     return 0;
   }
   return window.scrollY / Math.max(1, document.body.scrollHeight - window.innerHeight);
@@ -424,7 +519,7 @@ function jumpToAnchor(anchor) {
 }
 
 function setTocItems(items) {
-  if (state.documentKind === "svg") {
+  if (state.documentKind === "svg" || state.presentation.mode === "presentation") {
     state.tocItems = [];
     state.tocIndex = new Map();
     state.activeHeadingId = null;
@@ -510,12 +605,16 @@ function renderToc() {
 }
 
 function updateTocState() {
-  const tocVisible = state.documentKind === "markdown" && state.tocVisible;
+  const tocVisible =
+    state.documentKind === "markdown" &&
+    state.presentation.mode !== "presentation" &&
+    state.tocVisible;
   document.body.classList.toggle("toc-visible", tocVisible);
   document.body.classList.toggle("toc-focus", state.focusMode === "toc");
   document.body.classList.toggle("document-focus", state.focusMode === "document");
   document.body.classList.toggle("link-hint-mode", state.linkHintMode);
   document.body.classList.toggle("svg-mode", state.documentKind === "svg");
+  document.body.classList.toggle("presentation-mode", state.presentation.mode === "presentation");
 
   for (const row of tocNav.querySelectorAll(".toc-item")) {
     const id = row.dataset.id;
@@ -529,7 +628,7 @@ function updateTocState() {
 }
 
 function refreshHeadings() {
-  if (state.documentKind !== "markdown") {
+  if (state.documentKind !== "markdown" || state.presentation.mode === "presentation") {
     state.headingNodes = [];
     return;
   }
@@ -544,7 +643,7 @@ function refreshHeadings() {
 }
 
 function syncActiveHeading() {
-  if (state.documentKind !== "markdown") {
+  if (state.documentKind !== "markdown" || state.presentation.mode === "presentation") {
     state.activeHeadingId = null;
     state.activeTocId = null;
     updateTocState();
@@ -611,7 +710,7 @@ function ensureSelectedRowVisible() {
 }
 
 function switchFocus(nextMode) {
-  if (state.documentKind !== "markdown") {
+  if (state.documentKind !== "markdown" || state.presentation.mode === "presentation") {
     return false;
   }
 
@@ -635,7 +734,7 @@ function switchFocus(nextMode) {
 }
 
 function toggleTocVisibility() {
-  if (state.documentKind !== "markdown") {
+  if (state.documentKind !== "markdown" || state.presentation.mode === "presentation") {
     return false;
   }
 
@@ -675,7 +774,7 @@ function moveTocSelection(offset) {
 }
 
 function jumpToHeading(id, switchBackToDocument) {
-  if (state.documentKind !== "markdown") {
+  if (state.documentKind !== "markdown" || state.presentation.mode === "presentation") {
     return false;
   }
 
@@ -693,6 +792,200 @@ function jumpToHeading(id, switchBackToDocument) {
     updateTocState();
   }
 
+  return true;
+}
+
+function renderPresentationSlides() {
+  if (!state.presentation.enabled) {
+    presentationRoot.replaceChildren();
+    return;
+  }
+
+  const totalSlides = state.presentation.slides.length;
+  const header = state.presentation.header ? escapeHtml(state.presentation.header) : "";
+  const footer = state.presentation.footer ? escapeHtml(state.presentation.footer) : "";
+  const slides = state.presentation.slides.map((slide) => {
+    const section = document.createElement("section");
+    section.className = "presentation-slide";
+    section.dataset.slideIndex = String(slide.index);
+    section.innerHTML = `
+      <div class="presentation-shell">
+        <article class="presentation-stage">
+          <header class="presentation-chrome presentation-header${state.presentation.header ? "" : " hidden"}">
+            ${header}
+          </header>
+          <div class="presentation-body-viewport">
+            <div class="presentation-body-scale">
+              <div class="presentation-slide-body">${slide.body}</div>
+            </div>
+          </div>
+          <footer class="presentation-chrome presentation-footer${
+            state.presentation.footer || state.presentation.pageNumbers ? "" : " hidden"
+          }">
+            <span class="presentation-footer-text${state.presentation.footer ? "" : " hidden"}">${footer}</span>
+            <span class="presentation-page-number${state.presentation.pageNumbers ? "" : " hidden"}">${slide.index + 1} / ${totalSlides}</span>
+          </footer>
+        </article>
+      </div>`;
+    return section;
+  });
+
+  presentationRoot.replaceChildren(...slides);
+}
+
+function syncPresentationMode() {
+  const isPresentation = state.presentation.enabled && state.presentation.mode === "presentation";
+  content.classList.toggle("hidden", isPresentation);
+  presentationRoot.classList.toggle("hidden", !isPresentation);
+  if (isPresentation) {
+    state.focusMode = "document";
+    state.tocVisible = false;
+    showPresentationSlide(state.presentation.currentSlide);
+    presentationRoot.focus();
+  } else {
+    presentationRoot.classList.add("hidden");
+    content.classList.remove("hidden");
+    content.focus();
+  }
+  updateTocState();
+}
+
+function showPresentationSlide(index) {
+  if (!state.presentation.enabled) {
+    return false;
+  }
+
+  const maxIndex = Math.max(0, state.presentation.slides.length - 1);
+  state.presentation.currentSlide = Math.max(0, Math.min(index, maxIndex));
+
+  for (const slide of presentationRoot.querySelectorAll(".presentation-slide")) {
+    slide.classList.toggle(
+      "is-active",
+      Number.parseInt(slide.dataset.slideIndex ?? "-1", 10) === state.presentation.currentSlide,
+    );
+  }
+
+  void preparePresentationSlide(state.presentation.currentSlide);
+  return true;
+}
+
+function fitPresentationStage(slide) {
+  const shell = slide.querySelector(".presentation-shell");
+  const stage = slide.querySelector(".presentation-stage");
+  const viewport = slide.querySelector(".presentation-body-viewport");
+  const scaleBox = slide.querySelector(".presentation-body-scale");
+  const body = slide.querySelector(".presentation-slide-body");
+  if (!shell || !stage || !viewport || !scaleBox || !body) {
+    return;
+  }
+
+  const availableWidth = Math.max(1, shell.clientWidth);
+  const availableHeight = Math.max(1, shell.clientHeight);
+  const stageScale = Math.min(
+    1,
+    availableWidth / PRESENTATION_STAGE_WIDTH,
+    availableHeight / PRESENTATION_STAGE_HEIGHT,
+  );
+  stage.style.setProperty("--presentation-stage-scale", String(stageScale));
+
+  body.style.width = `${viewport.clientWidth}px`;
+  body.style.transform = "scale(1)";
+  scaleBox.style.width = `${viewport.clientWidth}px`;
+  scaleBox.style.height = "auto";
+
+  const naturalWidth = Math.max(viewport.clientWidth, body.scrollWidth);
+  const naturalHeight = Math.max(viewport.clientHeight, body.scrollHeight);
+  const contentScale = Math.min(1, viewport.clientWidth / naturalWidth, viewport.clientHeight / naturalHeight);
+
+  body.style.transform = `scale(${contentScale})`;
+  scaleBox.style.width = `${naturalWidth * contentScale}px`;
+  scaleBox.style.height = `${naturalHeight * contentScale}px`;
+}
+
+async function preparePresentationSlide(index) {
+  const slide = presentationRoot.querySelector(
+    `.presentation-slide[data-slide-index="${index}"]`,
+  );
+  if (!slide) {
+    return;
+  }
+
+  for (const image of slide.querySelectorAll("img")) {
+    if (image.dataset.mdglanceFitBound === "true") {
+      continue;
+    }
+    image.dataset.mdglanceFitBound = "true";
+    image.addEventListener("load", () => fitPresentationStage(slide), { once: true });
+    image.addEventListener("error", () => fitPresentationStage(slide), { once: true });
+  }
+
+  if (slide.dataset.mdglanceMermaidReady !== "true") {
+    await renderMermaidIn(slide);
+    slide.dataset.mdglanceMermaidReady = "true";
+  }
+  fitPresentationStage(slide);
+}
+
+function activePresentationSlideFromDocument() {
+  const activeHeading = state.activeHeadingId
+    ? document.getElementById(state.activeHeadingId)
+    : null;
+  const fromHeading = activeHeading?.closest("[data-presentation-slide]");
+  if (fromHeading) {
+    return Number.parseInt(fromHeading.dataset.presentationSlide ?? "0", 10);
+  }
+
+  const slides = Array.from(content.querySelectorAll("[data-presentation-slide]"));
+  if (slides.length === 0) {
+    return 0;
+  }
+
+  const threshold = Math.max(72, Math.round(window.innerHeight * 0.18));
+  let current = slides[0];
+  for (const slide of slides) {
+    if (slide.getBoundingClientRect().top - threshold <= 0) {
+      current = slide;
+    } else {
+      break;
+    }
+  }
+
+  return Number.parseInt(current.dataset.presentationSlide ?? "0", 10);
+}
+
+function jumpDocumentToPresentationSlide(index) {
+  const target = content.querySelector(`[data-presentation-slide="${index}"]`);
+  if (!target) {
+    return false;
+  }
+
+  target.scrollIntoView({ block: "start", behavior: "instant" });
+  refreshHeadings();
+  syncActiveHeading();
+  return true;
+}
+
+function togglePresentationMode() {
+  if (state.documentKind !== "markdown" || !state.presentation.enabled) {
+    return false;
+  }
+
+  closeLinkHints();
+  closeSearch(true);
+
+  if (state.presentation.mode === "presentation") {
+    state.presentation.mode = "markdown";
+    syncPresentationMode();
+    void renderMermaidIn(content);
+    jumpDocumentToPresentationSlide(state.presentation.currentSlide);
+    return true;
+  }
+
+  refreshHeadings();
+  syncActiveHeading();
+  state.presentation.currentSlide = activePresentationSlideFromDocument();
+  state.presentation.mode = "presentation";
+  syncPresentationMode();
   return true;
 }
 
@@ -830,6 +1123,7 @@ function performAction(action) {
   const page = Math.max(120, Math.round(window.innerHeight * 0.82));
   const svgStep = svgPanStep();
   const helpOpen = !helpOverlay.classList.contains("hidden");
+  const presentationOpen = state.presentation.mode === "presentation";
   const helpScroll = (delta) => {
     const panel = helpOverlay.querySelector(".help-panel");
     if (!panel) {
@@ -844,6 +1138,9 @@ function performAction(action) {
       if (helpOpen) {
         return helpScroll(line);
       }
+      if (presentationOpen) {
+        return showPresentationSlide(state.presentation.currentSlide + 1);
+      }
       if (state.documentKind === "svg") {
         return panSvgBy(0, -svgStep);
       }
@@ -852,6 +1149,9 @@ function performAction(action) {
     case "scroll_up":
       if (helpOpen) {
         return helpScroll(-line);
+      }
+      if (presentationOpen) {
+        return showPresentationSlide(state.presentation.currentSlide - 1);
       }
       if (state.documentKind === "svg") {
         return panSvgBy(0, svgStep);
@@ -872,6 +1172,9 @@ function performAction(action) {
       if (helpOpen) {
         return helpScroll(page / 2);
       }
+      if (presentationOpen) {
+        return showPresentationSlide(state.presentation.currentSlide + 1);
+      }
       if (state.documentKind === "svg") {
         return false;
       }
@@ -880,6 +1183,9 @@ function performAction(action) {
     case "half_page_up":
       if (helpOpen) {
         return helpScroll(-page / 2);
+      }
+      if (presentationOpen) {
+        return showPresentationSlide(state.presentation.currentSlide - 1);
       }
       if (state.documentKind === "svg") {
         return false;
@@ -890,6 +1196,9 @@ function performAction(action) {
       if (helpOpen) {
         return helpScroll(page);
       }
+      if (presentationOpen) {
+        return showPresentationSlide(state.presentation.currentSlide + 1);
+      }
       if (state.documentKind === "svg") {
         return false;
       }
@@ -898,6 +1207,9 @@ function performAction(action) {
     case "top":
       if (helpOpen) {
         return helpScroll(-Number.MAX_SAFE_INTEGER);
+      }
+      if (presentationOpen) {
+        return showPresentationSlide(0);
       }
       if (state.documentKind === "svg") {
         return false;
@@ -908,13 +1220,16 @@ function performAction(action) {
       if (helpOpen) {
         return helpScroll(Number.MAX_SAFE_INTEGER);
       }
+      if (presentationOpen) {
+        return showPresentationSlide(state.presentation.slides.length - 1);
+      }
       if (state.documentKind === "svg") {
         return false;
       }
       window.scrollTo({ top: document.body.scrollHeight, behavior: "instant" });
       return true;
     case "open_search":
-      if (state.documentKind !== "markdown") {
+      if (state.documentKind !== "markdown" || presentationOpen) {
         return false;
       }
       openSearch();
@@ -948,9 +1263,14 @@ function performAction(action) {
       return state.documentKind === "markdown"
         ? switchFocus(state.focusMode === "document" ? "toc" : "document")
         : false;
+    case "toggle_presentation":
+      return togglePresentationMode();
     case "back":
       if (state.documentKind !== "markdown") {
         return false;
+      }
+      if (presentationOpen) {
+        return showPresentationSlide(state.presentation.currentSlide - 1);
       }
       sendIpc({ type: "back", scroll_ratio: currentScrollRatio() });
       return true;
@@ -958,10 +1278,13 @@ function performAction(action) {
       if (state.documentKind !== "markdown") {
         return false;
       }
+      if (presentationOpen) {
+        return showPresentationSlide(state.presentation.currentSlide + 1);
+      }
       sendIpc({ type: "forward", scroll_ratio: currentScrollRatio() });
       return true;
     case "open_link_hints":
-      if (state.documentKind !== "markdown") {
+      if (state.documentKind !== "markdown" || presentationOpen) {
         return false;
       }
       return openLinkHints();
@@ -1045,6 +1368,23 @@ content.addEventListener("click", (event) => {
   }
 });
 
+presentationRoot.addEventListener("click", (event) => {
+  const link = event.target.closest("a[href]");
+  if (!link) {
+    return;
+  }
+
+  if (activateLinkElement(link)) {
+    event.preventDefault();
+  }
+});
+
+window.addEventListener("resize", () => {
+  if (state.presentation.mode === "presentation") {
+    void preparePresentationSlide(state.presentation.currentSlide);
+  }
+});
+
 window.addEventListener(
   "scroll",
   () => {
@@ -1060,6 +1400,7 @@ window.addEventListener("resize", () => {
 });
 
 setTocItems(initialState.toc);
+renderPresentationSlides();
 renderHelp();
 refreshHeadings();
 syncActiveHeading();
@@ -1068,7 +1409,12 @@ if (state.documentKind === "svg") {
   bindSvgViewer();
   resetSvgView();
 } else {
-  renderMermaid();
+  syncPresentationMode();
+  if (state.presentation.mode === "presentation") {
+    void preparePresentationSlide(state.presentation.currentSlide);
+  } else {
+    void renderMermaidIn(content);
+  }
 }
 
 function resetSvgBindings() {

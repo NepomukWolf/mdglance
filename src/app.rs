@@ -124,6 +124,7 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
                             "body": rendered.body,
                             "toc": rendered.toc,
                             "document_kind": rendered.document_kind,
+                            "presentation": rendered.presentation,
                         });
                         let script = format!("window.__mdglanceUpdate({payload});");
                         if let Err(err) = webview.evaluate_script(&script) {
@@ -419,6 +420,7 @@ fn open_file(
         "body": rendered.body,
         "toc": rendered.toc,
         "document_kind": rendered.document_kind,
+        "presentation": rendered.presentation,
         "anchor": anchor,
         "scroll_ratio": scroll_positions.get(current_file).copied().unwrap_or(0.0),
     });

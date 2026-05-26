@@ -34,6 +34,7 @@ pub struct RenderedContent {
     pub body: String,
     pub toc: Vec<TocItem>,
     pub document_kind: DocumentKind,
+    pub presentation: Option<PresentationData>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -50,6 +51,30 @@ pub enum DocumentKind {
     Svg,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct PresentationData {
+    pub enabled: bool,
+    pub default_mode: PresentationMode,
+    pub header: Option<String>,
+    pub footer: Option<String>,
+    pub page_numbers: bool,
+    pub slides: Vec<PresentationSlide>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[allow(dead_code)]
+#[serde(rename_all = "snake_case")]
+pub enum PresentationMode {
+    Markdown,
+    Presentation,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PresentationSlide {
+    pub index: usize,
+    pub body: String,
+}
+
 pub fn render_document(file: &Path, config: &Config) -> Result<String> {
     let rendered = render_body(file, config)?;
     let display_name = app::display_name(file);
@@ -60,6 +85,7 @@ pub fn render_document(file: &Path, config: &Config) -> Result<String> {
         title: display_name.clone(),
         toc: rendered.toc.clone(),
         document_kind: rendered.document_kind,
+        presentation: rendered.presentation.clone(),
     })?;
     let base = file
         .parent()
@@ -87,6 +113,7 @@ pub fn render_document(file: &Path, config: &Config) -> Result<String> {
       <p id="toc-empty" class="toc-empty hidden">No headings in this document.</p>
     </aside>
     <main id="content" tabindex="-1">{body}</main>
+    <section id="presentation-root" class="presentation-root hidden" tabindex="-1"></section>
   </div>
   <div id="search-bar" class="hud hidden">
     <span class="search-prefix">/</span>
@@ -123,16 +150,86 @@ pub fn render_body(file: &Path, config: &Config) -> Result<RenderedContent> {
     let base_dir = file
         .parent()
         .context("cannot render a file without a parent directory")?;
-    Ok(markdown_to_html(&source, base_dir, config.toc.max_depth))
+    Ok(render_markdown_document(
+        &source,
+        base_dir,
+        config.toc.max_depth,
+    ))
 }
 
-fn markdown_to_html(markdown: &str, base_dir: &Path, max_toc_depth: u8) -> RenderedContent {
+fn render_markdown_document(markdown: &str, base_dir: &Path, max_toc_depth: u8) -> RenderedContent {
+    let (frontmatter, body) = parse_frontmatter(markdown);
+    let is_presentation = frontmatter
+        .get("presentation")
+        .is_some_and(|value| value.eq_ignore_ascii_case("true"));
+
+    if !is_presentation {
+        let mut slug_counts = HashMap::new();
+        let fragment = markdown_to_html(body, base_dir, max_toc_depth, &mut slug_counts, None);
+        return RenderedContent {
+            body: fragment.body,
+            toc: fragment.toc,
+            document_kind: DocumentKind::Markdown,
+            presentation: None,
+        };
+    }
+
+    let slide_sources = split_presentation_slides(body);
+    let mut slug_counts = HashMap::new();
+    let mut toc = Vec::new();
+    let mut markdown_body = String::new();
+    let mut slides = Vec::new();
+
+    for (index, slide_source) in slide_sources.iter().enumerate() {
+        let fragment = markdown_to_html(
+            slide_source,
+            base_dir,
+            max_toc_depth,
+            &mut slug_counts,
+            Some(index),
+        );
+        toc.extend(fragment.toc);
+
+        if index > 0 {
+            markdown_body.push_str(&format!(
+                r#"<hr class="presentation-divider" data-slide-divider="{index}">"#
+            ));
+        }
+        markdown_body.push_str(&fragment.body);
+
+        slides.push(PresentationSlide {
+            index,
+            body: fragment.body,
+        });
+    }
+
+    RenderedContent {
+        body: markdown_body,
+        toc,
+        document_kind: DocumentKind::Markdown,
+        presentation: Some(PresentationData {
+            enabled: true,
+            default_mode: PresentationMode::Presentation,
+            header: frontmatter_text(&frontmatter, "presentation_header"),
+            footer: frontmatter_text(&frontmatter, "presentation_footer"),
+            page_numbers: frontmatter_bool(&frontmatter, "presentation_page_numbers"),
+            slides,
+        }),
+    }
+}
+
+fn markdown_to_html(
+    markdown: &str,
+    base_dir: &Path,
+    max_toc_depth: u8,
+    slug_counts: &mut HashMap<String, usize>,
+    slide_index: Option<usize>,
+) -> RenderedFragment {
     let parser = Parser::new_ext(markdown, markdown_options());
     let mut events = Vec::new();
     let mut toc = Vec::new();
     let mut current_block = None::<CodeBlockCapture>;
     let mut current_heading = None::<HeadingCapture>;
-    let mut slug_counts = HashMap::new();
 
     for event in parser {
         if let Some(block) = current_block.as_mut() {
@@ -160,7 +257,7 @@ fn markdown_to_html(markdown: &str, base_dir: &Path, max_toc_depth: u8) -> Rende
                     let heading = current_heading.take().expect("heading state must exist");
                     let title = collapse_whitespace(&heading.text);
                     let slug_source = heading.original_id.as_deref().unwrap_or(&title);
-                    let final_id = unique_heading_id(slug_source, &mut slug_counts);
+                    let final_id = unique_heading_id(slug_source, slug_counts);
                     let level_number = heading_level_number(heading.level);
 
                     if level_number <= max_toc_depth {
@@ -198,6 +295,12 @@ fn markdown_to_html(markdown: &str, base_dir: &Path, max_toc_depth: u8) -> Rende
                                             .to_string()
                                             .into_boxed_str(),
                                     )),
+                                ),
+                                (
+                                    CowStr::Borrowed("data-slide-index"),
+                                    slide_index.map(|index| {
+                                        CowStr::Boxed(index.to_string().into_boxed_str())
+                                    }),
                                 ),
                             ])
                             .collect(),
@@ -259,11 +362,13 @@ fn markdown_to_html(markdown: &str, base_dir: &Path, max_toc_depth: u8) -> Rende
 
     let mut body = String::new();
     html::push_html(&mut body, events.into_iter());
-    RenderedContent {
-        body,
-        toc,
-        document_kind: DocumentKind::Markdown,
+    if let Some(index) = slide_index {
+        body = format!(
+            r#"<section class="presentation-source-slide" data-presentation-slide="{index}">{body}</section>"#
+        );
     }
+
+    RenderedFragment { body, toc }
 }
 
 fn render_svg(source: &str) -> Result<RenderedContent> {
@@ -276,6 +381,7 @@ fn render_svg(source: &str) -> Result<RenderedContent> {
         body,
         toc: Vec::new(),
         document_kind: DocumentKind::Svg,
+        presentation: None,
     })
 }
 
@@ -460,6 +566,7 @@ struct InitialState {
     title: String,
     toc: Vec<TocItem>,
     document_kind: DocumentKind,
+    presentation: Option<PresentationData>,
 }
 
 struct HeadingCapture {
@@ -471,10 +578,96 @@ struct HeadingCapture {
     text: String,
 }
 
+struct RenderedFragment {
+    body: String,
+    toc: Vec<TocItem>,
+}
+
 fn is_svg_file(file: &Path) -> bool {
     file.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
+}
+
+fn parse_frontmatter(markdown: &str) -> (HashMap<String, String>, &str) {
+    let Some(rest) = markdown.strip_prefix("---\n") else {
+        return (HashMap::new(), markdown);
+    };
+
+    let Some(end) = rest.find("\n---\n") else {
+        return (HashMap::new(), markdown);
+    };
+
+    let frontmatter = &rest[..end];
+    let body = &rest[end + 5..];
+    let values = frontmatter
+        .lines()
+        .filter_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            Some((
+                key.trim().to_string(),
+                parse_frontmatter_value(value.trim()),
+            ))
+        })
+        .collect();
+
+    (values, body)
+}
+
+fn parse_frontmatter_value(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.len() >= 2 {
+        let bytes = trimmed.as_bytes();
+        let first = bytes[0];
+        let last = bytes[trimmed.len() - 1];
+        if (first == b'"' && last == b'"') || (first == b'\'' && last == b'\'') {
+            return trimmed[1..trimmed.len() - 1].trim().to_string();
+        }
+    }
+
+    trimmed.to_string()
+}
+
+fn frontmatter_bool(frontmatter: &HashMap<String, String>, key: &str) -> bool {
+    frontmatter
+        .get(key)
+        .is_some_and(|value| value.eq_ignore_ascii_case("true"))
+}
+
+fn frontmatter_text(frontmatter: &HashMap<String, String>, key: &str) -> Option<String> {
+    frontmatter
+        .get(key)
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn split_presentation_slides(markdown: &str) -> Vec<&str> {
+    let mut slides = Vec::new();
+    let mut in_fence = false;
+    let mut start = 0usize;
+    let mut cursor = 0usize;
+
+    for line in markdown.split_inclusive('\n') {
+        let trimmed = line.trim_end_matches(['\r', '\n']).trim();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+        } else if !in_fence && trimmed == "---" {
+            slides.push(markdown[start..cursor].trim());
+            start = cursor + line.len();
+        }
+        cursor += line.len();
+    }
+
+    slides.push(markdown[start..].trim());
+    let mut slides = slides
+        .into_iter()
+        .filter(|slide| !slide.is_empty())
+        .collect::<Vec<_>>();
+    if slides.is_empty() {
+        slides.push(markdown.trim());
+    }
+    slides
 }
 
 fn normalize_svg_document(source: &str) -> Option<String> {
@@ -524,5 +717,44 @@ impl CodeBlockCapture {
         info.split_whitespace()
             .next()
             .filter(|token| !token.is_empty())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_frontmatter, split_presentation_slides};
+
+    #[test]
+    fn parses_presentation_frontmatter() {
+        let markdown =
+            "---\npresentation: true\ntitle: Demo\npresentation_header: \"Deck\"\n---\n\n# Slide";
+        let (frontmatter, body) = parse_frontmatter(markdown);
+
+        assert_eq!(
+            frontmatter.get("presentation").map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(frontmatter.get("title").map(String::as_str), Some("Demo"));
+        assert_eq!(
+            frontmatter.get("presentation_header").map(String::as_str),
+            Some("Deck")
+        );
+        assert_eq!(body.trim(), "# Slide");
+    }
+
+    #[test]
+    fn splits_presentation_slides_on_separator_lines() {
+        let markdown = "# One\n\n---\n\n# Two\n";
+        let slides = split_presentation_slides(markdown);
+
+        assert_eq!(slides, vec!["# One", "# Two"]);
+    }
+
+    #[test]
+    fn does_not_split_slides_inside_fenced_code_blocks() {
+        let markdown = "# One\n\n```md\n---\n```\n\n---\n\n# Two\n";
+        let slides = split_presentation_slides(markdown);
+
+        assert_eq!(slides, vec!["# One\n\n```md\n---\n```", "# Two"]);
     }
 }

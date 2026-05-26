@@ -15,6 +15,7 @@ const SCOPE_SEARCH: u8 = 1 << 2;
 const SCOPE_TOC: u8 = 1 << 3;
 const SCOPE_HELP: u8 = 1 << 4;
 const SCOPE_SVG: u8 = 1 << 5;
+const SCOPE_PRESENTATION: u8 = 1 << 6;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -56,6 +57,7 @@ pub enum Action {
     CloseOverlay,
     ToggleToc,
     ToggleFocus,
+    TogglePresentation,
     Back,
     Forward,
     PreviousFile,
@@ -296,6 +298,7 @@ impl Action {
             Action::CloseOverlay,
             Action::ToggleToc,
             Action::ToggleFocus,
+            Action::TogglePresentation,
             Action::Back,
             Action::Forward,
             Action::PreviousFile,
@@ -330,6 +333,7 @@ impl Action {
             "close_overlay" => Action::CloseOverlay,
             "toggle_toc" => Action::ToggleToc,
             "toggle_focus" => Action::ToggleFocus,
+            "toggle_presentation" => Action::TogglePresentation,
             "back" => Action::Back,
             "forward" => Action::Forward,
             "previous_file" => Action::PreviousFile,
@@ -365,6 +369,7 @@ impl Action {
             Action::CloseOverlay => "close_overlay",
             Action::ToggleToc => "toggle_toc",
             Action::ToggleFocus => "toggle_focus",
+            Action::TogglePresentation => "toggle_presentation",
             Action::Back => "back",
             Action::Forward => "forward",
             Action::PreviousFile => "previous_file",
@@ -384,23 +389,27 @@ impl Action {
         match self {
             Action::Quit | Action::ShowHelp | Action::ToggleToc => SCOPE_GLOBAL,
             Action::ToggleFocus => SCOPE_DOCUMENT | SCOPE_TOC,
+            Action::TogglePresentation => SCOPE_DOCUMENT | SCOPE_PRESENTATION,
             Action::CloseOverlay => SCOPE_SEARCH | SCOPE_HELP,
             Action::AcceptSearch => SCOPE_SEARCH,
             Action::TocDown | Action::TocUp | Action::ActivateSelection => SCOPE_TOC,
-            Action::ScrollDown | Action::ScrollUp => SCOPE_DOCUMENT | SCOPE_SVG,
+            Action::ScrollDown | Action::ScrollUp => {
+                SCOPE_DOCUMENT | SCOPE_SVG | SCOPE_PRESENTATION
+            }
             Action::ScrollLeft | Action::ScrollRight => SCOPE_SVG,
             Action::HalfPageDown
             | Action::HalfPageUp
             | Action::PageDown
             | Action::Top
-            | Action::Bottom
-            | Action::OpenSearch
+            | Action::Bottom => SCOPE_DOCUMENT | SCOPE_PRESENTATION,
+            Action::OpenSearch
             | Action::NextSearchHit
             | Action::PreviousSearchHit
-            | Action::Back
-            | Action::Forward
             | Action::OpenLinkHints => SCOPE_DOCUMENT,
-            Action::PreviousFile | Action::NextFile => SCOPE_DOCUMENT | SCOPE_TOC | SCOPE_SVG,
+            Action::Back | Action::Forward => SCOPE_DOCUMENT | SCOPE_PRESENTATION,
+            Action::PreviousFile | Action::NextFile => {
+                SCOPE_DOCUMENT | SCOPE_TOC | SCOPE_SVG | SCOPE_PRESENTATION
+            }
             Action::ZoomIn | Action::ZoomOut | Action::ResetView => SCOPE_SVG,
         }
     }
@@ -452,6 +461,7 @@ fn default_keybindings() -> Vec<(Action, Vec<&'static str>)> {
         (Action::CloseOverlay, vec!["Escape"]),
         (Action::ToggleToc, vec!["t"]),
         (Action::ToggleFocus, vec!["Tab"]),
+        (Action::TogglePresentation, vec!["p"]),
         (Action::Back, vec!["h"]),
         (Action::Forward, vec!["l"]),
         (Action::PreviousFile, vec!["["]),
