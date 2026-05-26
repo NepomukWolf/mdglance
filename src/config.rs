@@ -57,6 +57,7 @@ pub enum Action {
     CloseOverlay,
     ToggleToc,
     ToggleFocus,
+    ToggleFullscreen,
     TogglePresentation,
     Back,
     Forward,
@@ -298,6 +299,7 @@ impl Action {
             Action::CloseOverlay,
             Action::ToggleToc,
             Action::ToggleFocus,
+            Action::ToggleFullscreen,
             Action::TogglePresentation,
             Action::Back,
             Action::Forward,
@@ -333,6 +335,7 @@ impl Action {
             "close_overlay" => Action::CloseOverlay,
             "toggle_toc" => Action::ToggleToc,
             "toggle_focus" => Action::ToggleFocus,
+            "toggle_fullscreen" => Action::ToggleFullscreen,
             "toggle_presentation" => Action::TogglePresentation,
             "back" => Action::Back,
             "forward" => Action::Forward,
@@ -369,6 +372,7 @@ impl Action {
             Action::CloseOverlay => "close_overlay",
             Action::ToggleToc => "toggle_toc",
             Action::ToggleFocus => "toggle_focus",
+            Action::ToggleFullscreen => "toggle_fullscreen",
             Action::TogglePresentation => "toggle_presentation",
             Action::Back => "back",
             Action::Forward => "forward",
@@ -387,7 +391,9 @@ impl Action {
 
     fn scope(self) -> u8 {
         match self {
-            Action::Quit | Action::ShowHelp | Action::ToggleToc => SCOPE_GLOBAL,
+            Action::Quit | Action::ShowHelp | Action::ToggleToc | Action::ToggleFullscreen => {
+                SCOPE_GLOBAL
+            }
             Action::ToggleFocus => SCOPE_DOCUMENT | SCOPE_TOC,
             Action::TogglePresentation => SCOPE_DOCUMENT | SCOPE_PRESENTATION,
             Action::CloseOverlay => SCOPE_SEARCH | SCOPE_HELP,
@@ -461,6 +467,7 @@ fn default_keybindings() -> Vec<(Action, Vec<&'static str>)> {
         (Action::CloseOverlay, vec!["Escape"]),
         (Action::ToggleToc, vec!["t"]),
         (Action::ToggleFocus, vec!["Tab"]),
+        (Action::ToggleFullscreen, default_fullscreen_bindings()),
         (Action::TogglePresentation, vec!["p"]),
         (Action::Back, vec!["h"]),
         (Action::Forward, vec!["l"]),
@@ -475,6 +482,16 @@ fn default_keybindings() -> Vec<(Action, Vec<&'static str>)> {
         (Action::ResetView, vec!["0"]),
         (Action::Quit, default_quit_bindings()),
     ]
+}
+
+#[cfg(target_os = "macos")]
+fn default_fullscreen_bindings() -> Vec<&'static str> {
+    vec!["Shift+F", "Cmd+Ctrl+F"]
+}
+
+#[cfg(not(target_os = "macos"))]
+fn default_fullscreen_bindings() -> Vec<&'static str> {
+    vec!["Shift+F", "F11"]
 }
 
 #[cfg(target_os = "macos")]

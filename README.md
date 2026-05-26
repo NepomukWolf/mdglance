@@ -87,6 +87,7 @@ cargo build
 | `j` / `k` | TOC mode: next / previous heading             |
 | `Enter`   | Accept search or jump to selected TOC heading |
 | `?`       | Show help                                     |
+| `Shift+F` | Toggle fullscreen                             |
 | `Esc`     | Close search/help                             |
 | `q`       | Quit                                          |
 
@@ -232,6 +233,7 @@ show_help = ["?"]
 close_overlay = ["Escape"]
 toggle_toc = ["t"]
 toggle_focus = ["Tab"]
+toggle_fullscreen = ["Shift+F", "Cmd+Ctrl+F"]
 toggle_presentation = ["p"]
 back = ["h"]
 forward = ["l"]

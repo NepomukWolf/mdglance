@@ -81,6 +81,7 @@ const ACTIONS = [
   { id: "close_overlay", description: "Close search or help" },
   { id: "toggle_toc", description: "Show or hide table of contents" },
   { id: "toggle_focus", description: "Switch focus between document and table of contents" },
+  { id: "toggle_fullscreen", description: "Toggle fullscreen" },
   { id: "toggle_presentation", description: "Toggle presentation mode" },
   { id: "back", description: "Back in history or previous slide" },
   { id: "forward", description: "Forward in history or next slide" },
@@ -101,7 +102,13 @@ const orderedBindings = config.keybindings.flatMap((binding) =>
   binding.shortcuts.map((shortcut) => ({ action: binding.action, shortcut })),
 );
 
-const GLOBAL_ACTIONS = new Set(["quit", "show_help", "toggle_toc", "close_overlay"]);
+const GLOBAL_ACTIONS = new Set([
+  "quit",
+  "show_help",
+  "toggle_toc",
+  "close_overlay",
+  "toggle_fullscreen",
+]);
 const SEARCH_ACTIONS = new Set(["accept_search", "close_overlay", "quit"]);
 const DOCUMENT_ACTIONS = new Set([
   "scroll_down",
@@ -1267,6 +1274,9 @@ function performAction(action) {
       return state.documentKind === "markdown"
         ? switchFocus(state.focusMode === "document" ? "toc" : "document")
         : false;
+    case "toggle_fullscreen":
+      sendIpc({ type: "toggle_fullscreen" });
+      return true;
     case "toggle_presentation":
       return togglePresentationMode();
     case "back":

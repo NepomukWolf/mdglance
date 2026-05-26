@@ -1,9 +1,13 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
+    thread,
+    time::Duration,
 };
 
 use anyhow::{Context, Result};
+#[cfg(target_os = "macos")]
+use tao::platform::macos::WindowExtMacOS;
 use tao::{
     dpi::LogicalSize,
     event::{ElementState, Event as TaoEvent, KeyEvent, WindowEvent},
@@ -23,6 +27,8 @@ use crate::{
 pub enum UserEvent {
     Reload,
     Close,
+    ToggleFullscreen,
+    Refocus,
     OpenExternal(String),
     OpenMarkdown { href: String, scroll_ratio: f64 },
     Back { scroll_ratio: f64 },
@@ -54,12 +60,13 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
                 f64::from(config.window.width),
                 f64::from(config.window.height),
             ));
-    if config.window.fullscreen {
+    if config.window.fullscreen && !cfg!(target_os = "macos") {
         window_builder = window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
     }
     let window = window_builder
         .build(&event_loop)
         .context("failed to create window")?;
+    apply_initial_fullscreen(&window, &config);
 
     let html = render::render_document(&current_file, &config)?;
     let webview = WebViewBuilder::new()
@@ -71,6 +78,9 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
                     match event {
                         IpcMessage::Close => {
                             let _ = proxy.send_event(UserEvent::Close);
+                        }
+                        IpcMessage::ToggleFullscreen => {
+                            let _ = proxy.send_event(UserEvent::ToggleFullscreen);
                         }
                         IpcMessage::OpenExternal { href } => {
                             let _ = proxy.send_event(UserEvent::OpenExternal(href));
@@ -110,7 +120,12 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
         .build(&window)
         .context("failed to create webview")?;
 
+    let refocus_script = String::from(
+        "window.focus(); document.getElementById('presentation-root')?.focus(); document.getElementById('content')?.focus();",
+    );
+
     let mut current_modifiers = ModifiersState::empty();
+    let refocus_proxy = event_loop.create_proxy();
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -151,6 +166,14 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
             }
             TaoEvent::UserEvent(UserEvent::Close) => {
                 *control_flow = ControlFlow::Exit;
+            }
+            TaoEvent::UserEvent(UserEvent::ToggleFullscreen) => {
+                toggle_fullscreen(&window);
+                refocus_window(&window, &webview, &refocus_script);
+                schedule_refocus(&refocus_proxy);
+            }
+            TaoEvent::UserEvent(UserEvent::Refocus) => {
+                refocus_window(&window, &webview, &refocus_script);
             }
             TaoEvent::UserEvent(UserEvent::OpenExternal(url)) => {
                 if let Err(err) = open_external_url(&url) {
@@ -269,6 +292,12 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
                 *control_flow = ControlFlow::Exit;
             }
             TaoEvent::WindowEvent {
+                event: WindowEvent::Focused(true),
+                ..
+            } => {
+                refocus_window(&window, &webview, &refocus_script);
+            }
+            TaoEvent::WindowEvent {
                 event: WindowEvent::ModifiersChanged(modifiers),
                 ..
             } => {
@@ -292,6 +321,7 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
 #[serde(tag = "type", rename_all = "snake_case")]
 enum IpcMessage {
     Close,
+    ToggleFullscreen,
     OpenExternal { href: String },
     OpenMarkdown { href: String, scroll_ratio: f64 },
     Back { scroll_ratio: f64 },
@@ -555,6 +585,55 @@ fn external_url(url: &str) -> Option<Url> {
 fn open_external_url(url: &str) -> Result<()> {
     open::that(url).with_context(|| format!("failed to open external URL {url}"))?;
     Ok(())
+}
+
+fn apply_initial_fullscreen(window: &tao::window::Window, config: &Config) {
+    if !config.window.fullscreen {
+        return;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let _ = window.set_simple_fullscreen(true);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+    }
+}
+
+fn toggle_fullscreen(window: &tao::window::Window) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = window.set_simple_fullscreen(!window.simple_fullscreen());
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let next = if window.fullscreen().is_some() {
+            None
+        } else {
+            Some(Fullscreen::Borderless(None))
+        };
+        window.set_fullscreen(next);
+    }
+}
+
+fn refocus_window(window: &tao::window::Window, webview: &wry::WebView, script: &str) {
+    window.set_focus();
+    let _ = webview.focus();
+    let _ = webview.evaluate_script(script);
+}
+
+fn schedule_refocus(proxy: &tao::event_loop::EventLoopProxy<UserEvent>) {
+    for delay_ms in [80u64, 220, 420] {
+        let proxy = proxy.clone();
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(delay_ms));
+            let _ = proxy.send_event(UserEvent::Refocus);
+        });
+    }
 }
 
 pub fn display_name(file: &Path) -> String {
