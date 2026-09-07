@@ -82,6 +82,7 @@ pub fn render_document(file: &Path, config: &Config) -> Result<String> {
     <aside id="toc-panel" class="toc-panel" tabindex="-1" aria-label="Table of contents">
       <div class="toc-header">
         <h2>Contents</h2>
+        <kbd id="toc-toggle-hint" class="toc-toggle-hint hidden" aria-label="Table of contents toggle shortcut"></kbd>
       </div>
       <nav id="toc-nav" class="toc-nav" aria-label="Table of contents"></nav>
       <p id="toc-empty" class="toc-empty hidden">No headings in this document.</p>
