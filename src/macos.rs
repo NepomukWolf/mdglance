@@ -1,27 +1,81 @@
-use objc2::MainThreadMarker;
-use objc2_app_kit::{NSApplication, NSApplicationPresentationOptions};
+use std::ptr::NonNull;
+
+use block2::RcBlock;
+use objc2::{
+    MainThreadMarker,
+    rc::Retained,
+    runtime::{AnyObject, NSObjectProtocol, ProtocolObject},
+};
+use objc2_app_kit::{
+    NSApplication, NSApplicationPresentationOptions, NSWindowDidEnterFullScreenNotification,
+    NSWindowDidExitFullScreenNotification,
+};
+use objc2_foundation::{NSNotification, NSNotificationCenter};
+use tao::{platform::macos::WindowExtMacOS, window::Window};
 
 pub struct FullscreenPresentation {
     normal_options: NSApplicationPresentationOptions,
-    active: bool,
+    observers: Option<FullscreenObservers>,
+}
+
+struct FullscreenObservers {
+    center: Retained<NSNotificationCenter>,
+    enter: Retained<ProtocolObject<dyn NSObjectProtocol>>,
+    exit: Retained<ProtocolObject<dyn NSObjectProtocol>>,
 }
 
 impl FullscreenPresentation {
     pub fn new() -> Self {
         Self {
             normal_options: application().presentationOptions(),
-            active: false,
+            observers: None,
         }
     }
 
-    pub fn sync(&mut self, fullscreen: bool) {
-        if fullscreen {
+    pub fn observe(mut self, window: &Window) -> Self {
+        let center = NSNotificationCenter::defaultCenter();
+        let ns_window = unsafe { &*window.ns_window().cast::<AnyObject>() };
+        let enter_block = RcBlock::new(|_: NonNull<NSNotification>| {
             let app = application();
             app.setPresentationOptions(native_fullscreen_options(app.presentationOptions()));
-            self.active = true;
-        } else if self.active {
-            application().setPresentationOptions(self.normal_options);
-            self.active = false;
+        });
+        let normal_options = self.normal_options;
+        let exit_block = RcBlock::new(move |_: NonNull<NSNotification>| {
+            application().setPresentationOptions(normal_options);
+        });
+
+        let enter = unsafe {
+            center.addObserverForName_object_queue_usingBlock(
+                Some(NSWindowDidEnterFullScreenNotification),
+                Some(ns_window),
+                None,
+                &enter_block,
+            )
+        };
+        let exit = unsafe {
+            center.addObserverForName_object_queue_usingBlock(
+                Some(NSWindowDidExitFullScreenNotification),
+                Some(ns_window),
+                None,
+                &exit_block,
+            )
+        };
+        self.observers = Some(FullscreenObservers {
+            center,
+            enter,
+            exit,
+        });
+        self
+    }
+}
+
+impl Drop for FullscreenObservers {
+    fn drop(&mut self) {
+        let enter: &AnyObject = AsRef::<AnyObject>::as_ref(&*self.enter);
+        let exit: &AnyObject = AsRef::<AnyObject>::as_ref(&*self.exit);
+        unsafe {
+            self.center.removeObserver(enter);
+            self.center.removeObserver(exit);
         }
     }
 }

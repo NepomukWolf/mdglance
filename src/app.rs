@@ -39,7 +39,7 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     #[cfg(target_os = "macos")]
-    let mut fullscreen_presentation = crate::macos::FullscreenPresentation::new();
+    let fullscreen_presentation = crate::macos::FullscreenPresentation::new();
     #[cfg(target_os = "macos")]
     let event_loop = {
         let mut event_loop = event_loop;
@@ -70,6 +70,8 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
     let window = window_builder
         .build(&event_loop)
         .context("failed to create window")?;
+    #[cfg(target_os = "macos")]
+    let fullscreen_presentation = fullscreen_presentation.observe(&window);
 
     let html = render::render_document(&current_file, &config)?;
     let webview = WebViewBuilder::new()
@@ -283,13 +285,6 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
             } => {
                 current_modifiers = modifiers;
             }
-            #[cfg(target_os = "macos")]
-            TaoEvent::WindowEvent {
-                event: WindowEvent::Resized(_),
-                ..
-            } => {
-                fullscreen_presentation.sync(window.fullscreen().is_some());
-            }
             TaoEvent::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
@@ -298,6 +293,10 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
             }
             _ => {}
         }
+
+        // Keep the AppKit notification observers alive for the event loop's lifetime.
+        #[cfg(target_os = "macos")]
+        let _ = &fullscreen_presentation;
     });
 
     #[allow(unreachable_code)]
