@@ -4,6 +4,8 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+#[cfg(target_os = "macos")]
+use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
 use tao::{
     dpi::LogicalSize,
     event::{ElementState, Event as TaoEvent, KeyEvent, WindowEvent},
@@ -36,6 +38,12 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
     let config = Config::load()?;
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
+    #[cfg(target_os = "macos")]
+    let event_loop = {
+        let mut event_loop = event_loop;
+        event_loop.set_activation_policy(ActivationPolicy::Accessory);
+        event_loop
+    };
     let proxy = event_loop.create_proxy();
     let mut watcher = watcher::watch_file(file.clone(), proxy)?;
     let mut current_file = file;
