@@ -180,6 +180,7 @@ max_depth = 3
 [window]
 width = 1280
 height = 900
+maximized = false
 fullscreen = false
 
 [keybindings]
@@ -213,6 +214,13 @@ zoom_out = ["-"]
 reset_view = ["0"]
 quit = ["q"]
 ```
+
+Set `maximized = true` to fill the usable desktop while keeping the native title bar and window
+controls. The configured width and height are used when the window is restored. Maximized and
+fullscreen modes cannot be enabled at the same time.
+
+On macOS, clicking the green window button normally enters Tao's borderless fullscreen mode, which
+hides the native controls. Option-click the green button to use macOS Zoom instead.
 
 When you set a keybinding entry, that action's default bindings are replaced by the list you provide.
 On macOS, the built-in defaults also include `Cmd+W` and `Cmd+Q`.

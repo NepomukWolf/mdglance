@@ -47,13 +47,13 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
     let mut queue_index = 0usize;
 
     let title = window_title(&current_file, Some((queue_index, queued_files.len())));
-    let mut window_builder =
-        WindowBuilder::new()
-            .with_title(title)
-            .with_inner_size(LogicalSize::new(
-                f64::from(config.window.width),
-                f64::from(config.window.height),
-            ));
+    let mut window_builder = WindowBuilder::new()
+        .with_title(title)
+        .with_inner_size(LogicalSize::new(
+            f64::from(config.window.width),
+            f64::from(config.window.height),
+        ))
+        .with_maximized(config.window.maximized);
     if config.window.fullscreen {
         window_builder = window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
     }
