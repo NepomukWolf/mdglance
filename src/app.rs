@@ -39,6 +39,8 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     #[cfg(target_os = "macos")]
+    let mut fullscreen_presentation = crate::macos::FullscreenPresentation::new();
+    #[cfg(target_os = "macos")]
     let event_loop = {
         let mut event_loop = event_loop;
         event_loop.set_activation_policy(ActivationPolicy::Accessory);
@@ -280,6 +282,13 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
                 ..
             } => {
                 current_modifiers = modifiers;
+            }
+            #[cfg(target_os = "macos")]
+            TaoEvent::WindowEvent {
+                event: WindowEvent::Resized(_),
+                ..
+            } => {
+                fullscreen_presentation.sync(window.fullscreen().is_some());
             }
             TaoEvent::WindowEvent {
                 event: WindowEvent::CloseRequested,

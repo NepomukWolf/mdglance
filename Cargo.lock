@@ -1397,6 +1397,8 @@ dependencies = [
  "dirs",
  "html-escape",
  "notify",
+ "objc2",
+ "objc2-app-kit",
  "open",
  "pulldown-cmark",
  "serde",
