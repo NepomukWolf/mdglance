@@ -116,7 +116,7 @@ body.toc-visible .toc-panel {
   text-align: left;
   font: inherit;
   cursor: pointer;
-  transition: background-color 100ms ease, box-shadow 100ms ease, outline-color 100ms ease;
+  transition: background-color 100ms ease, outline-color 100ms ease;
 }
 
 .toc-item:hover {
@@ -124,18 +124,22 @@ body.toc-visible .toc-panel {
 }
 
 .toc-guides {
-  align-self: stretch;
-  min-height: 100%;
+  position: absolute;
+  inset-block: -1px;
+  left: 8px;
+  width: calc((var(--toc-level) - 1) * 13px);
   background-image: repeating-linear-gradient(
     to right,
     transparent 0 5px,
     var(--sidebar-guide) 5px 6px,
     transparent 6px 13px
   );
+  pointer-events: none;
 }
 
 .toc-label {
   display: -webkit-box;
+  grid-column: 2;
   min-width: 0;
   overflow: hidden;
   line-height: 1.3;
@@ -146,7 +150,6 @@ body.toc-visible .toc-panel {
 
 .toc-item.is-active {
   background: var(--sidebar-active);
-  box-shadow: inset 2px 0 0 var(--sidebar-accent);
 }
 
 body.toc-focus .toc-item.is-selected {
