@@ -9,6 +9,15 @@ repository = "https://github.com/NepomukWolf/mdglance"
 readme = "README.md"
 keywords = ["markdown", "preview", "viewer", "svg"]
 categories = ["command-line-utilities", "gui"]
+include = [
+    "/src/**",
+    "/assets/app.js",
+    "/assets/style.css",
+    "/assets/mermaid.min.js",
+    "/README.md",
+    "/LICENSE",
+    "/THIRD_PARTY_NOTICES.md",
+]
 
 [dependencies]
 anyhow = "1.0"
