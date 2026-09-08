@@ -1,4 +1,7 @@
-# Third-party theme notices
+# Third-party notices
+
+The bundled Mermaid 11.14.0 browser build is distributed under the MIT license. Its minified
+bundle retains upstream dependency notices.
 
 The built-in Tokyo Night palette is adapted from
 [Tokyo Night](https://github.com/folke/tokyonight.nvim), copyright Folke Lemaitre and contributors,
