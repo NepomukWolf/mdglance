@@ -3,18 +3,7 @@ mermaidScript.text = window.__MDVIEW_MERMAID_SOURCE;
 document.head.appendChild(mermaidScript);
 
 const mermaid = globalThis.mermaid;
-const viewerColorScheme = getComputedStyle(document.documentElement).colorScheme;
-const mermaidDarkMode =
-  viewerColorScheme === "dark" ||
-  (viewerColorScheme.includes("dark") &&
-    viewerColorScheme.includes("light") &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches);
-mermaid.initialize({
-  startOnLoad: false,
-  securityLevel: "loose",
-  theme: mermaidDarkMode ? "dark" : "default",
-  themeVariables: { darkMode: mermaidDarkMode },
-});
+mermaid.initialize({ startOnLoad: false, securityLevel: "loose" });
 
 const config = window.__MDGLANCE_CONFIG;
 const initialState = window.__MDGLANCE_INITIAL_STATE;

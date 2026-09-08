@@ -14,10 +14,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mermaid_theme_follows_the_viewer_color_scheme() {
-        assert!(APP_JS.contains("getComputedStyle(document.documentElement).colorScheme"));
-        assert!(APP_JS.contains("(prefers-color-scheme: dark)"));
-        assert!(APP_JS.contains("theme: mermaidDarkMode ? \"dark\" : \"default\""));
-        assert!(APP_JS.contains("themeVariables: { darkMode: mermaidDarkMode }"));
+    fn mermaid_uses_its_default_theme_on_a_light_canvas() {
+        assert!(!APP_JS.contains("theme:"));
+        assert!(STYLE_CSS.contains(".mermaid {\n  text-align: center;\n  background: #ffffff;"));
     }
 }
