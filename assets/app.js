@@ -619,6 +619,18 @@ function ensureSelectedRowVisible() {
   }
 }
 
+function focusWithoutScrolling(element) {
+  const left = window.scrollX;
+  const top = window.scrollY;
+
+  element.focus({ preventScroll: true });
+
+  // Preserve the viewport on older webviews that accept but ignore preventScroll.
+  if (window.scrollX !== left || window.scrollY !== top) {
+    window.scrollTo({ left, top, behavior: "instant" });
+  }
+}
+
 function switchFocus(nextMode) {
   if (state.documentKind !== "markdown") {
     return false;
@@ -631,14 +643,14 @@ function switchFocus(nextMode) {
     state.tocVisible = true;
     alignTocSelectionToActive();
     state.focusMode = "toc";
-    tocPanel.focus();
+    focusWithoutScrolling(tocPanel);
     updateTocState();
     ensureSelectedRowVisible();
     return true;
   }
 
   state.focusMode = "document";
-  content.focus();
+  focusWithoutScrolling(content);
   updateTocState();
   return true;
 }
