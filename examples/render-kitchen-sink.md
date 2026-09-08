@@ -118,8 +118,8 @@ Nested ordered lists:
 - [x] Open arbitrary Markdown files.
 - [x] Render fenced Mermaid blocks.
 - [x] Refresh when the file changes.
-- [ ] Vendor Mermaid locally.
-- [ ] Add syntax highlighting.
+- [x] Vendor Mermaid locally.
+- [x] Add syntax highlighting.
 - [ ] Add a release build/install command.
 
 ## Inline Code
@@ -193,9 +193,10 @@ The image below is a local SVG referenced with a relative path. This checks that
 
 ![Markdown preview pipeline](diagram.svg)
 
-The next image is a local JPG in the same folder. It checks raster image loading and scaling.
+The next image is an original, AI-generated JPG created for this repository. It checks raster image
+loading and scaling.
 
-![Local JPG test image](example.jpg)
+![Generated landscape used as a local JPG test image](generated-landscape.jpg)
 
 Remote images are regular Markdown too, but this test file avoids them so it stays deterministic.
 
@@ -204,7 +205,7 @@ Remote images are regular Markdown too, but this test file avoids them so it sta
 | Area     | Current behavior    | Notes                        |
 | -------- | ------------------- | ---------------------------- |
 | Markdown | Rendered locally    | Uses `pulldown-cmark`        |
-| Mermaid  | Rendered in WebView | Currently loaded from CDN    |
+| Mermaid  | Rendered in WebView | Bundled for offline use      |
 | Images   | Relative paths work | Uses a document `<base>` URL |
 | Refresh  | On file changes     | Watches the parent directory |
 

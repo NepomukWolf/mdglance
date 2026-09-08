@@ -8,3 +8,14 @@ pub fn js_string_literal(value: &str) -> Result<String> {
     let json = serde_json::to_string(value)?;
     Ok(json.replace("</", "<\\/"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mermaid_uses_its_default_theme_on_a_light_canvas() {
+        assert!(!APP_JS.contains("theme:"));
+        assert!(STYLE_CSS.contains(".mermaid {\n  text-align: center;\n  background: #ffffff;"));
+    }
+}

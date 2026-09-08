@@ -4,6 +4,8 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+#[cfg(target_os = "macos")]
+use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
 use tao::{
     dpi::LogicalSize,
     event::{ElementState, Event as TaoEvent, KeyEvent, WindowEvent},
@@ -36,6 +38,14 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
     let config = Config::load()?;
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
+    #[cfg(target_os = "macos")]
+    let fullscreen_presentation = crate::macos::FullscreenPresentation::new();
+    #[cfg(target_os = "macos")]
+    let event_loop = {
+        let mut event_loop = event_loop;
+        event_loop.set_activation_policy(ActivationPolicy::Accessory);
+        event_loop
+    };
     let proxy = event_loop.create_proxy();
     let mut watcher = watcher::watch_file(file.clone(), proxy)?;
     let mut current_file = file;
@@ -47,19 +57,21 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
     let mut queue_index = 0usize;
 
     let title = window_title(&current_file, Some((queue_index, queued_files.len())));
-    let mut window_builder =
-        WindowBuilder::new()
-            .with_title(title)
-            .with_inner_size(LogicalSize::new(
-                f64::from(config.window.width),
-                f64::from(config.window.height),
-            ));
+    let mut window_builder = WindowBuilder::new()
+        .with_title(title)
+        .with_inner_size(LogicalSize::new(
+            f64::from(config.window.width),
+            f64::from(config.window.height),
+        ))
+        .with_maximized(config.window.maximized);
     if config.window.fullscreen {
         window_builder = window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
     }
     let window = window_builder
         .build(&event_loop)
         .context("failed to create window")?;
+    #[cfg(target_os = "macos")]
+    let fullscreen_presentation = fullscreen_presentation.observe(&window);
 
     let html = render::render_document(&current_file, &config)?;
     let webview = WebViewBuilder::new()
@@ -281,6 +293,10 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
             }
             _ => {}
         }
+
+        // Keep the AppKit notification observers alive for the event loop's lifetime.
+        #[cfg(target_os = "macos")]
+        let _ = &fullscreen_presentation;
     });
 
     #[allow(unreachable_code)]

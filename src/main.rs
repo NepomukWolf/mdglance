@@ -3,7 +3,10 @@ mod assets;
 mod cli;
 mod config;
 mod diagrams;
+#[cfg(target_os = "macos")]
+mod macos;
 mod render;
+mod theme;
 mod watcher;
 
 use anyhow::{Context, Result, bail};

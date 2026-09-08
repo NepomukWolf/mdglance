@@ -1,176 +1,74 @@
 # mdglance
 
-`mdglance` is a small native document previewer for terminal-first workflows.
+`mdglance` is a small, keyboard-first Markdown and SVG previewer for terminal workflows. It opens a
+native window, refreshes when the source file changes, and keeps the preview separate from your
+editor.
 
-It opens a Markdown or SVG file in a native window, renders the document read-only, and refreshes when the source file changes. The intended loop is simple: write in a terminal editor, save, and glance at the rendered result without opening a full editor or browser workspace. The app is designed to stay keyboard-first: navigation, search, TOC use, link following, history, and SVG pan/zoom are all available without touching the mouse.
-
-## Status
-
-This is still an early prototype, but it is already usable as a keyboard-first Markdown and SVG viewer for terminal workflows.
-
-[Mermaid](https://mermaid.js.org/) is bundled into the binary at compile time from `assets/mermaid.min.js`, so Mermaid rendering does not require runtime network access. [PlantUML](https://plantuml.com/) blocks are rendered locally through the `plantuml` CLI when it is available. Do not treat this as a hardened renderer for untrusted Markdown yet.
-
-## Usage
-
-Run from the repository:
-
-```sh
-cargo run -- path/to/file.md
-```
-
-Or pipe a newline-separated file list into the viewer queue:
-
-```sh
-fd -e svg | cargo run --
-```
-
-Return the shell prompt immediately:
-
-```sh
-cargo run -- --detach path/to/file.md
-```
-
-Try the included test document:
-
-```sh
-cargo run -- examples/render-kitchen-sink.md
-```
-
-Build a local debug binary:
-
-```sh
-cargo build
-./target/debug/mdglance examples/render-kitchen-sink.md
-./target/debug/mdglance --detach examples/render-kitchen-sink.md
-```
+> [!NOTE]
+> This is an early prototype developed and tested on macOS. It is not yet hardened for untrusted
+> Markdown.
 
 ## Features
 
-- Keyboard-first document viewer with no mouse required for core navigation.
-- Native window with live reload on file save.
-- Configurable keybindings and viewer settings via `mdglance.toml`.
-- Table of contents sidebar with keyboard focus mode and section tracking.
-- In-viewer navigation for relative `.md` links with back/forward history.
-- Optional stdin-driven file queue with previous/next navigation.
-- Keyboard link hints for opening visible links quickly.
-- Per-document scroll memory while moving between Markdown files.
-- Native SVG preview mode with fit-to-window, pan, zoom, and reset view.
-- Syntax highlighting for fenced code blocks with explicit language tags.
-- [Mermaid](https://mermaid.js.org/) diagram rendering without runtime network access.
-- Local [PlantUML](https://plantuml.com/) diagram rendering through the `plantuml` CLI, with graceful fallback to code blocks when unavailable or rendering fails.
-- Local image support for common raster and SVG formats.
+- Live, read-only Markdown and SVG preview
+- Keyboard navigation, search, table of contents, link hints, and Markdown history
+- File queues supplied as newline-separated paths on standard input
+- Offline Mermaid rendering and optional local PlantUML rendering
+- Syntax highlighting and configurable light/dark themes
+- Local image support
 
-## Keybindings
+## Run from source
 
-| Key       | Action                                        |
-| --------- | --------------------------------------------- |
-| `j` / `k` | Scroll down / up in document mode             |
-| `h` / `l` | Back / forward through Markdown history       |
-| `[` / `]` | Previous / next file in the viewer queue      |
-| `d` / `u` | Half page down / up                           |
-| `Space`   | Page down                                     |
-| `g` / `G` | Top / bottom                                  |
-| `h` / `l` | SVG mode: pan left / right                    |
-| `j` / `k` | SVG mode: pan down / up                       |
-| `=` / `+` | SVG mode: zoom in                             |
-| `-`       | SVG mode: zoom out                            |
-| `0`       | SVG mode: reset fitted view                   |
-| `/`       | Open search                                   |
-| `n` / `N` | Next / previous search hit                    |
-| `f`       | Open keyboard link hints                      |
-| `t`       | Toggle table of contents                      |
-| `Tab`     | Switch focus between document and TOC         |
-| `j` / `k` | TOC mode: next / previous heading             |
-| `Enter`   | Accept search or jump to selected TOC heading |
-| `?`       | Show help                                     |
-| `Esc`     | Close search/help                             |
-| `q`       | Quit                                          |
-
-## Diagrams
-
-Fenced [Mermaid](https://mermaid.js.org/) blocks are rendered in the preview:
-
-````markdown
-```mermaid
-flowchart LR
-  A[Markdown] --> B[Preview]
-```
-````
-
-Fenced [PlantUML](https://plantuml.com/) blocks are rendered locally when the `plantuml` CLI is installed:
-
-````markdown
-```plantuml
-@startuml
-Alice -> Bob: hello
-@enduml
-```
-````
-
-## SVG Preview
-
-Open an SVG file directly to preview it with fit-to-window scaling:
+You need a current Rust toolchain.
 
 ```sh
-cargo run -- examples/diagram.svg
+git clone https://github.com/NepomukWolf/mdglance.git
+cd mdglance
+cargo run -- examples/render-kitchen-sink.md
 ```
 
-In SVG mode, Markdown-specific features such as TOC, search, and link navigation are disabled. The dedicated SVG controls are pan with `h` `j` `k` `l`, zoom with `=`/`+` and `-`, and reset view with `0`.
-
-## File Queue
-
-When no file argument is provided and stdin is not a TTY, `mdglance` reads newline-separated file paths from stdin, opens the first file, and keeps the rest as a viewer queue:
+Pass `--detach` to return the shell prompt immediately:
 
 ```sh
-fd -e svg | mdglance
+cargo run -- --detach README.md
 ```
 
-Use `[` and `]` to move to the previous and next file in that queue. The window title shows the current queue position while you are on a queued file.
-
-## Security Notes
-
-`mdglance` renders Markdown inside a native WebView. That is useful, but it also means Markdown rendering needs a clear security model.
-
-Before previewing untrusted Markdown, the project should harden these areas:
-
-- Strip or escape raw HTML by default.
-- Block dangerous link schemes such as `javascript:`.
-- Keep vendored [Mermaid](https://mermaid.js.org/) pinned and reviewed.
-- Treat local [PlantUML](https://plantuml.com/) execution as part of the trusted local toolchain.
-- Keep app IPC minimal and validated.
-- Keep external sites out of the preview WebView.
-
-External `http` and `https` links are currently opened in the default browser instead of navigating inside the preview window.
-
-## Development
-
-Format and check:
+With no path argument, `mdglance` reads a newline-separated file queue from standard input:
 
 ```sh
-cargo fmt
-cargo check
+fd -e md -e svg | cargo run --
 ```
 
-Build:
+Use `[` and `]` to move through the queue.
 
-```sh
-cargo build
-```
+PlantUML blocks require the `plantuml` executable to be available on `PATH`. Without it, those
+blocks remain readable as source code. Mermaid is bundled and works offline.
 
-## License
+## Keyboard shortcuts
 
-MIT. See [LICENSE](/Users/wolf/dev/mdview/LICENSE).
+| Keys | Action |
+| --- | --- |
+| `j` / `k` | Scroll down / up |
+| `d` / `u` | Half-page down / up |
+| `Space`, `g`, `G` | Page down, top, bottom |
+| `/`, `n`, `N` | Search, next match, previous match |
+| `t`, `Tab`, `Enter` | Toggle TOC, change focus, activate selection |
+| `f` | Show link hints |
+| `h` / `l` | Markdown history; pan left / right in SVG mode |
+| `[` / `]` | Previous / next queued file |
+| `+` / `-` / `0` | Zoom in / out / reset SVG view |
+| `?`, `Esc`, `q` | Help, close overlay, quit |
+
+Shortcuts can be replaced in the configuration file.
 
 ## Configuration
 
-`mdglance` resolves config from one of two locations:
+Configuration is optional. `mdglance` checks, in order:
 
-1. `./mdglance.toml` in the directory where you invoked the CLI
-2. `~/.config/mdglance/config.toml` if no project-local file is present
+1. `mdglance.toml` in the directory where it was launched
+2. `~/.config/mdglance/config.toml`
 
-Defaults stay in the binary, so config is optional.
-
-Example:
+A minimal example:
 
 ```toml
 [toc]
@@ -180,39 +78,42 @@ max_depth = 3
 [window]
 width = 1280
 height = 900
-fullscreen = false
+
+[theme]
+preset = "system"
 
 [keybindings]
-scroll_down = ["j"]
-scroll_up = ["k"]
-scroll_left = ["h"]
-scroll_right = ["l"]
-half_page_down = ["d"]
-half_page_up = ["u"]
-page_down = ["Space"]
-top = ["g"]
-bottom = ["Shift+G"]
-open_search = ["/"]
-accept_search = ["Enter"]
-next_search_hit = ["n"]
-previous_search_hit = ["Shift+N"]
-show_help = ["?"]
-close_overlay = ["Escape"]
-toggle_toc = ["t"]
-toggle_focus = ["Tab"]
-back = ["h"]
-forward = ["l"]
-previous_file = ["["]
-next_file = ["]"]
-open_link_hints = ["f"]
-toc_down = ["j"]
-toc_up = ["k"]
-activate_selection = ["Enter"]
-zoom_in = ["=", "Shift+="]
-zoom_out = ["-"]
-reset_view = ["0"]
 quit = ["q"]
 ```
 
-When you set a keybinding entry, that action's default bindings are replaced by the list you provide.
-On macOS, the built-in defaults also include `Cmd+W` and `Cmd+Q`.
+Built-in theme presets are `system`, `light`, `dark`, `tokyo-night`, `gruvbox`,
+`catppuccin-latte`, `catppuccin-mocha`, `solarized-light`, and `solarized-dark`. Semantic colors
+and syntax themes can also be overridden independently for light and dark appearances; see the
+configuration types and defaults in [`src/config.rs`](src/config.rs).
+
+On macOS, option-click the green window button to use Zoom instead of borderless fullscreen.
+
+## Security
+
+`mdglance` renders Markdown in a native WebView. Only use it with documents you trust for now:
+
+- raw HTML is not sanitized;
+- Mermaid currently uses its `loose` security mode;
+- PlantUML invokes a locally installed executable;
+- external HTTP(S) links open in the default browser.
+
+Hardening untrusted input is tracked in [`ROADMAP.md`](ROADMAP.md).
+
+## Development
+
+```sh
+cargo fmt --check
+cargo test
+```
+
+The larger files under [`examples/`](examples/) are rendering fixtures, not product documentation.
+Mermaid and theme attribution is recorded in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+## License
+
+Licensed under the [MIT License](LICENSE).

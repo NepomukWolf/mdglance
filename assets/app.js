@@ -12,6 +12,7 @@ const content = document.getElementById("content");
 const tocPanel = document.getElementById("toc-panel");
 const tocNav = document.getElementById("toc-nav");
 const tocEmpty = document.getElementById("toc-empty");
+const tocToggleHint = document.getElementById("toc-toggle-hint");
 const searchBar = document.getElementById("search-bar");
 const searchInput = document.getElementById("search-input");
 const searchStatus = document.getElementById("search-status");
@@ -282,6 +283,13 @@ function renderHelp() {
   helpList.replaceChildren(...rows);
 }
 
+function configureTocHeader() {
+  const shortcut = keybindings.get("toggle_toc")?.keys[0];
+  tocToggleHint.classList.toggle("hidden", !shortcut);
+  tocToggleHint.textContent = shortcut ?? "";
+  tocToggleHint.title = shortcut ? `Toggle table of contents (${shortcut})` : "";
+}
+
 function isTypingTarget(element) {
   return (
     element &&
@@ -488,16 +496,17 @@ function renderToc() {
     button.dataset.level = String(item.level);
     button.style.setProperty("--toc-level", item.level);
     button.title = item.title;
+    button.setAttribute("aria-label", `Heading level ${item.level}: ${item.title}`);
 
-    const level = document.createElement("span");
-    level.className = "toc-level";
-    level.textContent = `H${item.level}`;
+    const guides = document.createElement("span");
+    guides.className = "toc-guides";
+    guides.setAttribute("aria-hidden", "true");
 
     const label = document.createElement("span");
     label.className = "toc-label";
     label.textContent = item.title;
 
-    button.append(level, label);
+    button.append(guides, label);
     button.addEventListener("click", () => {
       state.tocSelectionId = item.id;
       jumpToHeading(item.id, true);
@@ -610,6 +619,18 @@ function ensureSelectedRowVisible() {
   }
 }
 
+function focusWithoutScrolling(element) {
+  const left = window.scrollX;
+  const top = window.scrollY;
+
+  element.focus({ preventScroll: true });
+
+  // Preserve the viewport on older webviews that accept but ignore preventScroll.
+  if (window.scrollX !== left || window.scrollY !== top) {
+    window.scrollTo({ left, top, behavior: "instant" });
+  }
+}
+
 function switchFocus(nextMode) {
   if (state.documentKind !== "markdown") {
     return false;
@@ -622,14 +643,14 @@ function switchFocus(nextMode) {
     state.tocVisible = true;
     alignTocSelectionToActive();
     state.focusMode = "toc";
-    tocPanel.focus();
+    focusWithoutScrolling(tocPanel);
     updateTocState();
     ensureSelectedRowVisible();
     return true;
   }
 
   state.focusMode = "document";
-  content.focus();
+  focusWithoutScrolling(content);
   updateTocState();
   return true;
 }
@@ -1060,6 +1081,7 @@ window.addEventListener("resize", () => {
 });
 
 setTocItems(initialState.toc);
+configureTocHeader();
 renderHelp();
 refreshHeadings();
 syncActiveHeading();

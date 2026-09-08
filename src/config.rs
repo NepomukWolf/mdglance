@@ -8,6 +8,8 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use tao::keyboard::{Key, ModifiersState};
 
+use crate::theme::{ThemeConfig, ThemeOverrides};
+
 const PROJECT_CONFIG_NAME: &str = "mdglance.toml";
 const SCOPE_GLOBAL: u8 = 1 << 0;
 const SCOPE_DOCUMENT: u8 = 1 << 1;
@@ -20,6 +22,7 @@ const SCOPE_SVG: u8 = 1 << 5;
 pub struct Config {
     pub window: WindowConfig,
     pub toc: TocConfig,
+    pub theme: ThemeConfig,
     keybindings: BTreeMap<Action, Vec<KeyBinding>>,
 }
 
@@ -27,6 +30,7 @@ pub struct Config {
 pub struct WindowConfig {
     pub width: u32,
     pub height: u32,
+    pub maximized: bool,
     pub fullscreen: bool,
 }
 
@@ -112,6 +116,8 @@ struct FileConfig {
     #[serde(default)]
     toc: TocOverrides,
     #[serde(default)]
+    theme: ThemeOverrides,
+    #[serde(default)]
     keybindings: HashMap<String, Vec<String>>,
 }
 
@@ -120,6 +126,7 @@ struct FileConfig {
 struct WindowOverrides {
     width: Option<u32>,
     height: Option<u32>,
+    maximized: Option<bool>,
     fullscreen: Option<bool>,
 }
 
@@ -143,39 +150,49 @@ impl Config {
             .with_context(|| format!("failed to read {}", source.display()))?;
         let file_config: FileConfig = toml::from_str(&content)
             .with_context(|| format!("failed to parse {}", source.display()))?;
+        let config_dir = source
+            .parent()
+            .context("configuration path has no parent directory")?;
 
+        config
+            .apply(file_config, config_dir)
+            .with_context(|| format!("invalid configuration in {}", source.display()))?;
+
+        Ok(config)
+    }
+
+    fn apply(&mut self, file_config: FileConfig, config_dir: &std::path::Path) -> Result<()> {
+        self.theme = ThemeConfig::resolve(file_config.theme, config_dir)?;
         if let Some(width) = file_config.window.width {
-            config.window.width = width;
+            self.window.width = width;
         }
         if let Some(height) = file_config.window.height {
-            config.window.height = height;
+            self.window.height = height;
+        }
+        if let Some(maximized) = file_config.window.maximized {
+            self.window.maximized = maximized;
         }
         if let Some(fullscreen) = file_config.window.fullscreen {
-            config.window.fullscreen = fullscreen;
+            self.window.fullscreen = fullscreen;
         }
         if let Some(visible_on_start) = file_config.toc.visible_on_start {
-            config.toc.visible_on_start = visible_on_start;
+            self.toc.visible_on_start = visible_on_start;
         }
         if let Some(max_depth) = file_config.toc.max_depth {
-            config.toc.max_depth = max_depth.max(1);
+            self.toc.max_depth = max_depth.max(1);
         }
 
         for (name, shortcuts) in file_config.keybindings {
-            let action = Action::from_config_key(&name).ok_or_else(|| {
-                anyhow::anyhow!("unknown action `{name}` in {}", source.display())
-            })?;
+            let action = Action::from_config_key(&name)
+                .ok_or_else(|| anyhow::anyhow!("unknown action `{name}`"))?;
             let bindings = shortcuts
                 .into_iter()
                 .map(|shortcut| parse_shortcut(&shortcut))
                 .collect::<Result<Vec<_>>>()?;
-            config.keybindings.insert(action, bindings);
+            self.keybindings.insert(action, bindings);
         }
 
-        config
-            .validate()
-            .with_context(|| format!("invalid keybindings in {}", source.display()))?;
-
-        Ok(config)
+        self.validate()
     }
 
     pub fn web_config(&self) -> WebConfig {
@@ -214,6 +231,10 @@ impl Config {
     }
 
     fn validate(&self) -> Result<()> {
+        if self.window.maximized && self.window.fullscreen {
+            bail!("`window.maximized` and `window.fullscreen` are mutually exclusive");
+        }
+
         let mut seen: HashMap<Shortcut, Vec<(Action, u8)>> = HashMap::new();
 
         for action in Action::all() {
@@ -250,6 +271,7 @@ impl Default for Config {
         let window = WindowConfig {
             width: 1080,
             height: 860,
+            maximized: false,
             fullscreen: false,
         };
         let toc = TocConfig {
@@ -271,6 +293,7 @@ impl Default for Config {
         Self {
             window,
             toc,
+            theme: ThemeConfig::default(),
             keybindings,
         }
     }
@@ -628,5 +651,79 @@ fn native_named_key(key: &Key<'_>) -> Option<&'static str> {
         Key::Delete => Some("Delete"),
         Key::Escape => Some("Escape"),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config_from_toml(source: &str) -> Result<Config> {
+        let overrides = toml::from_str(source)?;
+        let mut config = Config::default();
+        config.apply(overrides, std::path::Path::new("."))?;
+        Ok(config)
+    }
+
+    #[test]
+    fn window_is_not_maximized_by_default() {
+        assert!(!Config::default().window.maximized);
+    }
+
+    #[test]
+    fn enables_maximized_window_mode() {
+        let config = config_from_toml("[window]\nmaximized = true").unwrap();
+
+        assert!(config.window.maximized);
+        assert!(!config.window.fullscreen);
+    }
+
+    #[test]
+    fn partial_window_override_preserves_other_defaults() {
+        let defaults = Config::default();
+        let config = config_from_toml("[window]\nmaximized = true").unwrap();
+
+        assert_eq!(config.window.width, defaults.window.width);
+        assert_eq!(config.window.height, defaults.window.height);
+        assert_eq!(config.window.fullscreen, defaults.window.fullscreen);
+    }
+
+    #[test]
+    fn rejects_maximized_and_fullscreen_together() {
+        let error = config_from_toml("[window]\nmaximized = true\nfullscreen = true")
+            .expect_err("window modes should be mutually exclusive");
+
+        assert!(error.to_string().contains("mutually exclusive"));
+    }
+
+    #[test]
+    fn keeps_fullscreen_available_without_maximized_mode() {
+        let config = config_from_toml("[window]\nfullscreen = true").unwrap();
+
+        assert!(config.window.fullscreen);
+        assert!(!config.window.maximized);
+    }
+
+    #[test]
+    fn loads_theme_configuration_with_other_settings() {
+        let config = config_from_toml(
+            r##"
+[window]
+width = 1200
+
+[theme]
+preset = "gruvbox"
+
+[theme.dark]
+link = "#abcdef"
+syntax_theme = "solarized-dark"
+"##,
+        )
+        .unwrap();
+
+        assert_eq!(config.window.width, 1200);
+        assert_eq!(config.theme.preset, crate::theme::ThemePreset::Gruvbox);
+        assert_eq!(config.theme.dark.colors.link.to_string(), "#abcdef");
+        assert_eq!(config.theme.dark.syntax_theme, "solarized-dark");
     }
 }
