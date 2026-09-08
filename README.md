@@ -261,6 +261,19 @@ Available syntax themes are `inspired-github`, `solarized-dark`, `solarized-ligh
 `tokyo-night`, and `gruvbox`. Syntax highlighting applies to fenced code blocks whose language is
 recognized; other code inherits the active theme's foreground and code background.
 
+You can also use an external TextMate/Syntect `.tmTheme` file for code highlighting:
+
+```toml
+[theme.dark]
+syntax_theme_file = "~/.config/mdglance/themes/custom-dark.tmTheme"
+```
+
+With the `system` preset, light and dark variants can load different files. Relative paths are
+resolved from the directory containing the active `mdglance.toml` or `config.toml`; `~/` expands to
+your home directory. `syntax_theme` and `syntax_theme_file` cannot both be set in the same variant.
+The file controls code-token styling only—the semantic viewer colors continue to come from the
+preset and the color overrides listed above.
+
 On macOS, clicking the green window button normally enters Tao's borderless fullscreen mode, which
 hides the native controls. Option-click the green button to use macOS Zoom instead.
 

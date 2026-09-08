@@ -1,6 +1,11 @@
-use std::{fmt, str::FromStr, sync::LazyLock};
+use std::{
+    fmt,
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::LazyLock,
+};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use syntect::{
     highlighting::{
@@ -33,6 +38,13 @@ pub struct ThemeConfig {
 pub struct ThemeVariant {
     pub colors: ThemeColors,
     pub syntax_theme: String,
+    syntax_theme_file: Option<LoadedSyntaxTheme>,
+}
+
+#[derive(Debug, Clone)]
+struct LoadedSyntaxTheme {
+    path: PathBuf,
+    theme: Theme,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -82,6 +94,7 @@ struct ThemeVariantOverrides {
     search_match: Option<String>,
     error: Option<String>,
     syntax_theme: Option<String>,
+    syntax_theme_file: Option<String>,
 }
 
 impl Default for ThemeConfig {
@@ -91,7 +104,15 @@ impl Default for ThemeConfig {
 }
 
 impl ThemeConfig {
-    pub fn resolve(overrides: ThemeOverrides) -> Result<Self> {
+    pub fn resolve(overrides: ThemeOverrides, config_dir: &Path) -> Result<Self> {
+        Self::resolve_with_home(overrides, config_dir, dirs::home_dir().as_deref())
+    }
+
+    fn resolve_with_home(
+        overrides: ThemeOverrides,
+        config_dir: &Path,
+        home_dir: Option<&Path>,
+    ) -> Result<Self> {
         let preset = overrides
             .preset
             .as_deref()
@@ -99,8 +120,12 @@ impl ThemeConfig {
             .transpose()?
             .unwrap_or(ThemePreset::System);
         let mut config = Self::for_preset(preset);
-        config.light.apply(overrides.light, "theme.light")?;
-        config.dark.apply(overrides.dark, "theme.dark")?;
+        config
+            .light
+            .apply(overrides.light, "theme.light", config_dir, home_dir)?;
+        config
+            .dark
+            .apply(overrides.dark, "theme.dark", config_dir, home_dir)?;
         Ok(config)
     }
 
@@ -109,19 +134,19 @@ impl ThemeConfig {
             ThemePreset::System => Ok(format!(
                 ":root {{ color-scheme: light dark; }}\n{}\n{}\n@media (prefers-color-scheme: dark) {{\n{}\n{}\n}}",
                 self.light.colors.css_variables(),
-                syntax_css(&self.light.syntax_theme)?,
+                self.light.syntax_css()?,
                 self.dark.colors.css_variables(),
-                syntax_css(&self.dark.syntax_theme)?,
+                self.dark.syntax_css()?,
             )),
             ThemePreset::Light => Ok(format!(
                 ":root {{ color-scheme: light; }}\n{}\n{}",
                 self.light.colors.css_variables(),
-                syntax_css(&self.light.syntax_theme)?,
+                self.light.syntax_css()?,
             )),
             ThemePreset::Dark | ThemePreset::TokyoNight | ThemePreset::Gruvbox => Ok(format!(
                 ":root {{ color-scheme: dark; }}\n{}\n{}",
                 self.dark.colors.css_variables(),
-                syntax_css(&self.dark.syntax_theme)?,
+                self.dark.syntax_css()?,
             )),
         }
     }
@@ -130,10 +155,12 @@ impl ThemeConfig {
         let standard_light = ThemeVariant {
             colors: standard_light(),
             syntax_theme: "inspired-github".into(),
+            syntax_theme_file: None,
         };
         let standard_dark = ThemeVariant {
             colors: standard_dark(),
             syntax_theme: "base16-ocean-dark".into(),
+            syntax_theme_file: None,
         };
 
         match preset {
@@ -148,6 +175,7 @@ impl ThemeConfig {
                 dark: ThemeVariant {
                     colors: tokyo_night(),
                     syntax_theme: "tokyo-night".into(),
+                    syntax_theme_file: None,
                 },
             },
             ThemePreset::Gruvbox => Self {
@@ -156,6 +184,7 @@ impl ThemeConfig {
                 dark: ThemeVariant {
                     colors: gruvbox(),
                     syntax_theme: "gruvbox".into(),
+                    syntax_theme_file: None,
                 },
             },
         }
@@ -163,7 +192,13 @@ impl ThemeConfig {
 }
 
 impl ThemeVariant {
-    fn apply(&mut self, overrides: ThemeVariantOverrides, context: &str) -> Result<()> {
+    fn apply(
+        &mut self,
+        overrides: ThemeVariantOverrides,
+        context: &str,
+        config_dir: &Path,
+        home_dir: Option<&Path>,
+    ) -> Result<()> {
         macro_rules! apply_color {
             ($field:ident) => {
                 if let Some(value) = overrides.$field {
@@ -186,11 +221,32 @@ impl ThemeVariant {
         apply_color!(search_match);
         apply_color!(error);
 
+        if overrides.syntax_theme.is_some() && overrides.syntax_theme_file.is_some() {
+            bail!(
+                "`{context}.syntax_theme` and `{context}.syntax_theme_file` are mutually exclusive"
+            );
+        }
+
         if let Some(theme) = overrides.syntax_theme {
             validate_syntax_theme(&theme)?;
             self.syntax_theme = theme;
+            self.syntax_theme_file = None;
+        } else if let Some(value) = overrides.syntax_theme_file {
+            let path = resolve_theme_path(&value, config_dir, home_dir).with_context(|| {
+                format!("invalid `{context}.syntax_theme_file` value `{value}`")
+            })?;
+            let theme = ThemeSet::get_theme(&path)
+                .with_context(|| format!("failed to load syntax theme file {}", path.display()))?;
+            self.syntax_theme_file = Some(LoadedSyntaxTheme { path, theme });
         }
         Ok(())
+    }
+
+    fn syntax_css(&self) -> Result<String> {
+        if let Some(loaded) = &self.syntax_theme_file {
+            return generate_syntax_css(&loaded.theme, &loaded.path.display().to_string());
+        }
+        syntax_css(&self.syntax_theme)
     }
 }
 
@@ -346,10 +402,37 @@ pub fn syntax_class_style() -> ClassStyle {
 }
 
 fn syntax_css(id: &str) -> Result<String> {
-    let mut theme = syntax_theme(id)?;
+    generate_syntax_css(&syntax_theme(id)?, id)
+}
+
+fn generate_syntax_css(theme: &Theme, description: &str) -> Result<String> {
+    let mut theme = theme.clone();
     theme.settings.background = None;
-    css_for_theme_with_class_style(&theme, syntax_class_style())
-        .map_err(|error| anyhow::anyhow!("failed to generate syntax CSS for `{id}`: {error}"))
+    css_for_theme_with_class_style(&theme, syntax_class_style()).map_err(|error| {
+        anyhow::anyhow!("failed to generate syntax CSS for `{description}`: {error}")
+    })
+}
+
+fn resolve_theme_path(value: &str, config_dir: &Path, home_dir: Option<&Path>) -> Result<PathBuf> {
+    let path = if value == "~" {
+        home_dir
+            .map(Path::to_path_buf)
+            .context("cannot expand `~` because the home directory is unavailable")?
+    } else if let Some(relative) = value.strip_prefix("~/") {
+        home_dir
+            .context("cannot expand `~/` because the home directory is unavailable")?
+            .join(relative)
+    } else if value.starts_with('~') {
+        bail!("only `~` and `~/` home-directory expansion are supported");
+    } else {
+        let path = PathBuf::from(value);
+        if path.is_absolute() {
+            path
+        } else {
+            config_dir.join(path)
+        }
+    };
+    Ok(path)
 }
 
 fn validate_syntax_theme(id: &str) -> Result<()> {
@@ -468,6 +551,10 @@ impl From<HexColor> for SyntectColor {
 mod tests {
     use super::*;
 
+    fn resolve(overrides: ThemeOverrides) -> Result<ThemeConfig> {
+        ThemeConfig::resolve(overrides, Path::new("."))
+    }
+
     #[test]
     fn parses_only_six_digit_hex_colors() {
         assert_eq!(
@@ -499,7 +586,7 @@ syntax_theme = "solarized-dark"
 "##,
         )
         .unwrap();
-        let theme = ThemeConfig::resolve(overrides).unwrap();
+        let theme = resolve(overrides).unwrap();
 
         assert_eq!(theme.preset, ThemePreset::TokyoNight);
         assert_eq!(theme.dark.colors.heading.to_string(), "#abcdef");
@@ -528,14 +615,14 @@ syntax_theme = "solarized-dark"
     fn rejects_invalid_theme_values() {
         let bad_color: ThemeOverrides =
             toml::from_str("[dark]\nbackground = \"transparent\"").unwrap();
-        assert!(ThemeConfig::resolve(bad_color).is_err());
+        assert!(resolve(bad_color).is_err());
 
         let bad_syntax: ThemeOverrides =
             toml::from_str("[dark]\nsyntax_theme = \"unknown\"").unwrap();
-        assert!(ThemeConfig::resolve(bad_syntax).is_err());
+        assert!(resolve(bad_syntax).is_err());
 
         let bad_preset: ThemeOverrides = toml::from_str("preset = \"unknown\"").unwrap();
-        assert!(ThemeConfig::resolve(bad_preset).is_err());
+        assert!(resolve(bad_preset).is_err());
     }
 
     #[test]
@@ -551,7 +638,7 @@ syntax_theme = "solarized-dark"
     #[test]
     fn fixed_presets_emit_only_the_active_variant() {
         let overrides: ThemeOverrides = toml::from_str("preset = \"tokyo-night\"").unwrap();
-        let css = ThemeConfig::resolve(overrides).unwrap().css().unwrap();
+        let css = resolve(overrides).unwrap().css().unwrap();
 
         assert!(css.contains("color-scheme: dark"));
         assert!(css.contains("--background: #1a1b26"));
@@ -565,5 +652,73 @@ syntax_theme = "solarized-dark"
             syntax_css("tokyo-night").unwrap(),
             syntax_css("gruvbox").unwrap()
         );
+    }
+
+    #[test]
+    fn loads_relative_external_syntax_theme_once() {
+        let overrides: ThemeOverrides =
+            toml::from_str("[dark]\nsyntax_theme_file = \"minimal.tmTheme\"").unwrap();
+        let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let theme = ThemeConfig::resolve(overrides, &fixture_dir).unwrap();
+
+        let css = theme.dark.syntax_css().unwrap();
+        assert_eq!(theme.dark.colors.background.to_string(), "#0d1117");
+        assert!(css.contains("#123456"));
+        assert!(css.contains("#abcdef"));
+        assert!(!css.contains("#010203"));
+    }
+
+    #[test]
+    fn loads_absolute_external_syntax_theme() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/minimal.tmTheme");
+        let overrides = ThemeOverrides {
+            dark: ThemeVariantOverrides {
+                syntax_theme_file: Some(path.display().to_string()),
+                ..ThemeVariantOverrides::default()
+            },
+            ..ThemeOverrides::default()
+        };
+        let theme = ThemeConfig::resolve(overrides, Path::new("ignored")).unwrap();
+
+        assert!(theme.dark.syntax_css().unwrap().contains("#abcdef"));
+    }
+
+    #[test]
+    fn rejects_conflicting_syntax_theme_sources() {
+        let overrides: ThemeOverrides = toml::from_str(
+            "[dark]\nsyntax_theme = \"gruvbox\"\nsyntax_theme_file = \"theme.tmTheme\"",
+        )
+        .unwrap();
+        let error = resolve(overrides).unwrap_err().to_string();
+
+        assert!(error.contains("mutually exclusive"));
+        assert!(error.contains("theme.dark.syntax_theme_file"));
+    }
+
+    #[test]
+    fn expands_home_and_rejects_unsupported_tilde_forms() {
+        let base = Path::new("/config");
+        let home = Path::new("/home/example");
+
+        assert_eq!(
+            resolve_theme_path("~/themes/night.tmTheme", base, Some(home)).unwrap(),
+            home.join("themes/night.tmTheme")
+        );
+        assert!(resolve_theme_path("~/theme.tmTheme", base, None).is_err());
+        assert!(resolve_theme_path("~someone/theme.tmTheme", base, Some(home)).is_err());
+    }
+
+    #[test]
+    fn reports_resolved_path_for_missing_or_malformed_theme() {
+        let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        for file in ["missing.tmTheme", "malformed.tmTheme"] {
+            let source = format!("[dark]\nsyntax_theme_file = \"{file}\"");
+            let overrides: ThemeOverrides = toml::from_str(&source).unwrap();
+            let error = ThemeConfig::resolve(overrides, &fixture_dir)
+                .unwrap_err()
+                .to_string();
+
+            assert!(error.contains(&fixture_dir.join(file).display().to_string()));
+        }
     }
 }

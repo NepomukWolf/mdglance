@@ -150,16 +150,19 @@ impl Config {
             .with_context(|| format!("failed to read {}", source.display()))?;
         let file_config: FileConfig = toml::from_str(&content)
             .with_context(|| format!("failed to parse {}", source.display()))?;
+        let config_dir = source
+            .parent()
+            .context("configuration path has no parent directory")?;
 
         config
-            .apply(file_config)
+            .apply(file_config, config_dir)
             .with_context(|| format!("invalid configuration in {}", source.display()))?;
 
         Ok(config)
     }
 
-    fn apply(&mut self, file_config: FileConfig) -> Result<()> {
-        self.theme = ThemeConfig::resolve(file_config.theme)?;
+    fn apply(&mut self, file_config: FileConfig, config_dir: &std::path::Path) -> Result<()> {
+        self.theme = ThemeConfig::resolve(file_config.theme, config_dir)?;
         if let Some(width) = file_config.window.width {
             self.window.width = width;
         }
@@ -658,7 +661,7 @@ mod tests {
     fn config_from_toml(source: &str) -> Result<Config> {
         let overrides = toml::from_str(source)?;
         let mut config = Config::default();
-        config.apply(overrides)?;
+        config.apply(overrides, std::path::Path::new("."))?;
         Ok(config)
     }
 
