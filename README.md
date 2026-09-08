@@ -49,6 +49,7 @@ cargo build
 - Keyboard-first document viewer with no mouse required for core navigation.
 - Native window with live reload on file save.
 - Configurable keybindings and viewer settings via `mdglance.toml`.
+- System-aware light/dark themes plus configurable Tokyo Night and Gruvbox presets.
 - Table of contents sidebar with keyboard focus mode and section tracking.
 - In-viewer navigation for relative `.md` links with back/forward history.
 - Optional stdin-driven file queue with previous/next navigation.
@@ -218,6 +219,47 @@ quit = ["q"]
 Set `maximized = true` to fill the usable desktop while keeping the native title bar and window
 controls. The configured width and height are used when the window is restored. Maximized and
 fullscreen modes cannot be enabled at the same time.
+
+### Themes
+
+The viewer follows the operating system's light or dark appearance by default. Choose a fixed
+preset with `theme.preset`:
+
+```toml
+[theme]
+preset = "tokyo-night" # system, light, dark, tokyo-night, or gruvbox
+```
+
+`tokyo-night` uses the Tokyo Night Night terminal palette, while `gruvbox` uses Gruvbox Dark
+Medium. Theme colors and syntax highlighting can be overridden independently for the light and
+dark variants. Overrides are applied on top of the selected preset:
+
+```toml
+[theme]
+preset = "system"
+
+[theme.light]
+heading = "#24292f"
+link = "#0969da"
+syntax_theme = "inspired-github"
+
+[theme.dark]
+background = "#1a1b26"
+text = "#c0caf5"
+heading = "#bb9af7"
+link = "#7aa2f7"
+code_background = "#16161e"
+syntax_theme = "tokyo-night"
+```
+
+Semantic color fields accept six-digit hexadecimal colors (`#RRGGBB`): `background`, `surface`,
+`text`, `muted_text`, `heading`, `link`, `border`, `divider`, `code_background`,
+`sidebar_background`, `accent`, `search_match`, and `error`.
+
+Available syntax themes are `inspired-github`, `solarized-dark`, `solarized-light`,
+`base16-eighties-dark`, `base16-mocha-dark`, `base16-ocean-dark`, `base16-ocean-light`,
+`tokyo-night`, and `gruvbox`. Syntax highlighting applies to fenced code blocks whose language is
+recognized; other code inherits the active theme's foreground and code background.
 
 On macOS, clicking the green window button normally enters Tao's borderless fullscreen mode, which
 hides the native controls. Option-click the green button to use macOS Zoom instead.

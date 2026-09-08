@@ -8,6 +8,8 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use tao::keyboard::{Key, ModifiersState};
 
+use crate::theme::{ThemeConfig, ThemeOverrides};
+
 const PROJECT_CONFIG_NAME: &str = "mdglance.toml";
 const SCOPE_GLOBAL: u8 = 1 << 0;
 const SCOPE_DOCUMENT: u8 = 1 << 1;
@@ -20,6 +22,7 @@ const SCOPE_SVG: u8 = 1 << 5;
 pub struct Config {
     pub window: WindowConfig,
     pub toc: TocConfig,
+    pub theme: ThemeConfig,
     keybindings: BTreeMap<Action, Vec<KeyBinding>>,
 }
 
@@ -113,6 +116,8 @@ struct FileConfig {
     #[serde(default)]
     toc: TocOverrides,
     #[serde(default)]
+    theme: ThemeOverrides,
+    #[serde(default)]
     keybindings: HashMap<String, Vec<String>>,
 }
 
@@ -154,6 +159,7 @@ impl Config {
     }
 
     fn apply(&mut self, file_config: FileConfig) -> Result<()> {
+        self.theme = ThemeConfig::resolve(file_config.theme)?;
         if let Some(width) = file_config.window.width {
             self.window.width = width;
         }
@@ -284,6 +290,7 @@ impl Default for Config {
         Self {
             window,
             toc,
+            theme: ThemeConfig::default(),
             keybindings,
         }
     }
@@ -692,5 +699,28 @@ mod tests {
 
         assert!(config.window.fullscreen);
         assert!(!config.window.maximized);
+    }
+
+    #[test]
+    fn loads_theme_configuration_with_other_settings() {
+        let config = config_from_toml(
+            r##"
+[window]
+width = 1200
+
+[theme]
+preset = "gruvbox"
+
+[theme.dark]
+link = "#abcdef"
+syntax_theme = "solarized-dark"
+"##,
+        )
+        .unwrap();
+
+        assert_eq!(config.window.width, 1200);
+        assert_eq!(config.theme.preset, crate::theme::ThemePreset::Gruvbox);
+        assert_eq!(config.theme.dark.colors.link.to_string(), "#abcdef");
+        assert_eq!(config.theme.dark.syntax_theme, "solarized-dark");
     }
 }

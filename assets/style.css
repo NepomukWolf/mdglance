@@ -1,26 +1,15 @@
 :root {
-  color-scheme: light dark;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   line-height: 1.55;
-  background: Canvas;
-  color: CanvasText;
+  background: var(--background);
+  color: var(--text);
   --panel-width: 280px;
-  --sidebar-accent: #0969da;
-  --sidebar-background: color-mix(in srgb, CanvasText 3%, Canvas);
-  --sidebar-border: color-mix(in srgb, CanvasText 12%, transparent);
-  --sidebar-guide: color-mix(in srgb, CanvasText 13%, transparent);
-  --sidebar-muted: color-mix(in srgb, CanvasText 58%, Canvas);
-  --sidebar-hover: color-mix(in srgb, CanvasText 5%, transparent);
-  --sidebar-active: color-mix(in srgb, var(--sidebar-accent) 9%, transparent);
-  --sidebar-selection: color-mix(in srgb, var(--sidebar-accent) 68%, CanvasText);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --sidebar-accent: #4493f8;
-    --sidebar-background: color-mix(in srgb, CanvasText 4%, Canvas);
-    --sidebar-active: color-mix(in srgb, var(--sidebar-accent) 14%, transparent);
-  }
+  --sidebar-border: var(--border);
+  --sidebar-guide: color-mix(in srgb, var(--text) 13%, transparent);
+  --sidebar-muted: var(--muted-text);
+  --sidebar-hover: color-mix(in srgb, var(--text) 6%, transparent);
+  --sidebar-active: color-mix(in srgb, var(--accent) 13%, transparent);
+  --sidebar-selection: color-mix(in srgb, var(--accent) 72%, var(--text));
 }
 
 * {
@@ -29,6 +18,8 @@
 
 body {
   margin: 0;
+  background: var(--background);
+  color: var(--text);
 }
 
 .app-shell {
@@ -84,7 +75,7 @@ body.toc-visible .toc-panel {
   padding: 2px 6px;
   border: 1px solid var(--sidebar-border);
   border-radius: 5px;
-  background: color-mix(in srgb, CanvasText 3%, Canvas);
+  background: var(--surface);
   color: var(--sidebar-muted);
   font: 500 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   text-align: center;
@@ -111,7 +102,7 @@ body.toc-visible .toc-panel {
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
-  color: CanvasText;
+  color: var(--text);
   padding: 6px 8px;
   text-align: left;
   font: inherit;
@@ -213,25 +204,32 @@ h3,
 h4,
 h5,
 h6 {
+  color: var(--heading);
   line-height: 1.2;
   margin: 1.6em 0 0.5em;
   scroll-margin-top: 18px;
 }
 
 h1 {
-  border-bottom: 1px solid color-mix(in srgb, CanvasText 20%, transparent);
+  border-bottom: 1px solid var(--divider);
   padding-bottom: 0.25em;
 }
 
 a {
-  color: LinkText;
+  color: var(--link);
+}
+
+hr {
+  height: 1px;
+  border: 0;
+  background: var(--divider);
 }
 
 pre {
   overflow: auto;
   padding: 14px;
   border-radius: 8px;
-  background: color-mix(in srgb, CanvasText 8%, Canvas);
+  background: var(--code-background);
 }
 
 code {
@@ -242,14 +240,14 @@ code {
 :not(pre)>code {
   padding: 0.15em 0.35em;
   border-radius: 5px;
-  background: color-mix(in srgb, CanvasText 8%, Canvas);
+  background: var(--code-background);
 }
 
 blockquote {
   margin-left: 0;
   padding-left: 1em;
-  border-left: 4px solid color-mix(in srgb, CanvasText 22%, transparent);
-  color: color-mix(in srgb, CanvasText 74%, Canvas);
+  border-left: 4px solid var(--border);
+  color: var(--muted-text);
 }
 
 table {
@@ -261,7 +259,7 @@ table {
 
 th,
 td {
-  border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+  border: 1px solid var(--border);
   padding: 6px 10px;
 }
 
@@ -316,15 +314,15 @@ svg {
   width: min(620px, calc(100vw - 32px));
   transform: translateX(-50%);
   padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, CanvasText 20%, transparent);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: color-mix(in srgb, Canvas 92%, CanvasText);
-  box-shadow: 0 14px 34px color-mix(in srgb, CanvasText 18%, transparent);
+  background: var(--surface);
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--text) 18%, transparent);
 }
 
 .search-prefix,
 #search-status {
-  color: color-mix(in srgb, CanvasText 70%, Canvas);
+  color: var(--muted-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
@@ -334,19 +332,18 @@ svg {
   border: 0;
   outline: 0;
   background: transparent;
-  color: CanvasText;
+  color: var(--text);
   font: 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .mdglance-search-hit {
   border-radius: 3px;
-  background: #e5d07c;
-  color: #1f1f1f;
+  background: color-mix(in srgb, var(--search-match) 38%, transparent);
+  color: var(--text);
 }
 
 .mdglance-search-hit.current {
-  background: #4d81c5;
-  color: white;
+  background: color-mix(in srgb, var(--accent) 48%, transparent);
 }
 
 .help {
@@ -356,7 +353,7 @@ svg {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: color-mix(in srgb, CanvasText 28%, transparent);
+  background: color-mix(in srgb, var(--text) 28%, transparent);
 }
 
 .help-panel {
@@ -364,10 +361,10 @@ svg {
   max-height: calc(100vh - 48px);
   overflow: auto;
   padding: 22px 24px;
-  border: 1px solid color-mix(in srgb, CanvasText 20%, transparent);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: Canvas;
-  box-shadow: 0 20px 50px color-mix(in srgb, CanvasText 25%, transparent);
+  background: var(--background);
+  box-shadow: 0 20px 50px color-mix(in srgb, var(--text) 25%, transparent);
 }
 
 .help-panel h2 {
@@ -400,7 +397,7 @@ svg {
 }
 
 .error {
-  color: #b00020;
+  color: var(--error);
   white-space: pre-wrap;
 }
 
@@ -415,9 +412,9 @@ svg {
   position: absolute;
   min-width: 20px;
   padding: 1px 6px;
-  border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
-  background: color-mix(in srgb, Canvas 96%, CanvasText);
-  color: CanvasText;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
   font: 700 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   pointer-events: auto;
 }
@@ -428,7 +425,7 @@ svg {
     position: fixed;
     inset: 0;
     z-index: 34;
-    background: color-mix(in srgb, CanvasText 12%, transparent);
+    background: color-mix(in srgb, var(--text) 12%, transparent);
     pointer-events: none;
   }
 
@@ -442,7 +439,7 @@ svg {
     z-index: 35;
     width: min(300px, calc(100vw - 32px));
     border-right-width: 1px;
-    box-shadow: 16px 0 40px color-mix(in srgb, CanvasText 18%, transparent);
+    box-shadow: 16px 0 40px color-mix(in srgb, var(--text) 18%, transparent);
   }
 
   main {

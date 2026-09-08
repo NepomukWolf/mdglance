@@ -6,28 +6,16 @@ use pulldown_cmark::{
     CodeBlockKind, CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd, html,
 };
 use serde::Serialize;
-use syntect::{
-    easy::HighlightLines,
-    highlighting::{Theme, ThemeSet},
-    html::{IncludeBackground, styled_line_to_highlighted_html},
-    parsing::SyntaxSet,
-    util::LinesWithEndings,
-};
+use syntect::{html::ClassedHTMLGenerator, parsing::SyntaxSet, util::LinesWithEndings};
 
 use crate::{
     app, assets,
     config::Config,
     diagrams::{self, DiagramRender},
+    theme,
 };
 
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
-static SYNTAX_THEME: LazyLock<Theme> = LazyLock::new(|| {
-    ThemeSet::load_defaults()
-        .themes
-        .get("InspiredGitHub")
-        .cloned()
-        .expect("default syntect theme must exist")
-});
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RenderedContent {
@@ -55,6 +43,7 @@ pub fn render_document(file: &Path, config: &Config) -> Result<String> {
     let display_name = app::display_name(file);
     let title = html_escape::encode_text(&display_name).to_string();
     let mermaid_js = assets::js_string_literal(assets::MERMAID_JS)?;
+    let theme_css = config.theme.css()?;
     let app_config = inline_json(&config.web_config())?;
     let initial_state = inline_json(&InitialState {
         title: display_name.clone(),
@@ -75,7 +64,7 @@ pub fn render_document(file: &Path, config: &Config) -> Result<String> {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <base href="{base}/">
   <title>{title}</title>
-  <style>{css}</style>
+  <style>{css}\n{theme_css}</style>
 </head>
 <body>
   <div id="app-shell" class="app-shell">
@@ -110,7 +99,8 @@ pub fn render_document(file: &Path, config: &Config) -> Result<String> {
 </html>"#,
         app_js = assets::APP_JS,
         body = rendered.body,
-        css = assets::STYLE_CSS
+        css = assets::STYLE_CSS,
+        theme_css = theme_css
     ))
 }
 
@@ -365,7 +355,7 @@ fn render_code_block_html(block: CodeBlockCapture) -> String {
         .language()
         .map(|language| {
             format!(
-                r#" class="language-{}""#,
+                " language-{}",
                 html_escape::encode_double_quoted_attribute(language)
             )
         })
@@ -373,24 +363,29 @@ fn render_code_block_html(block: CodeBlockCapture) -> String {
 
     let code_html = block
         .language()
-        .and_then(|language| highlighted_code_html(language, &block.text))
+        .and_then(|language| classed_code_html(language, &block.text))
         .unwrap_or_else(|| html_escape::encode_text(&block.text).into_owned());
 
-    format!(r#"<pre class="code-block"><code{language_class}>{code_html}</code></pre>"#)
+    format!(
+        r#"<pre class="code-block"><code class="syntect-code{language_class}">{code_html}</code></pre>"#
+    )
 }
 
-fn highlighted_code_html(language: &str, source: &str) -> Option<String> {
+fn classed_code_html(language: &str, source: &str) -> Option<String> {
     let syntax = SYNTAX_SET.find_syntax_by_token(language)?;
-    let mut highlighter = HighlightLines::new(syntax, &SYNTAX_THEME);
-    let mut html = String::new();
+    let mut generator = ClassedHTMLGenerator::new_with_class_style(
+        syntax,
+        &SYNTAX_SET,
+        theme::syntax_class_style(),
+    );
 
     for line in LinesWithEndings::from(source) {
-        let ranges = highlighter.highlight_line(line, &SYNTAX_SET).ok()?;
-        let line_html = styled_line_to_highlighted_html(&ranges[..], IncludeBackground::No).ok()?;
-        html.push_str(&line_html);
+        generator
+            .parse_html_for_line_which_includes_newline(line)
+            .ok()?;
     }
 
-    Some(html)
+    Some(generator.finalize())
 }
 
 fn heading_level_number(level: HeadingLevel) -> u8 {
@@ -525,5 +520,35 @@ impl CodeBlockCapture {
         info.split_whitespace()
             .next()
             .filter(|token| !token.is_empty())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn highlighted_code_uses_prefixed_scope_classes() {
+        let rendered = markdown_to_html("```rust\nfn main() {}\n```", Path::new("."), 3);
+
+        assert!(
+            rendered
+                .body
+                .contains("class=\"syntect-code language-rust\"")
+        );
+        assert!(rendered.body.contains("syntect-"));
+        assert!(!rendered.body.contains("style=\"color:"));
+    }
+
+    #[test]
+    fn unknown_languages_fall_back_to_escaped_plain_code() {
+        let rendered = markdown_to_html("```not-a-language\n<a>&\n```", Path::new("."), 3);
+
+        assert!(rendered.body.contains("&lt;a&gt;&amp;"));
+        assert!(
+            rendered
+                .body
+                .contains("class=\"syntect-code language-not-a-language\"")
+        );
     }
 }
