@@ -8,5 +8,13 @@ The built-in Gruvbox palette is adapted from
 [Gruvbox](https://github.com/morhetz/gruvbox), copyright Pavel Pertsev and contributors, licensed
 under the MIT/X11 license.
 
-Only palette values and semantic color mappings are included; mdglance does not bundle either
-theme project's application code.
+The built-in Catppuccin Latte and Mocha palettes are adapted from
+[Catppuccin](https://github.com/catppuccin/palette), copyright the Catppuccin organization and
+contributors, licensed under the MIT license.
+
+The built-in Solarized Light and Dark palettes are adapted from
+[Solarized](https://github.com/altercation/solarized), copyright Ethan Schoonover, licensed under
+the MIT license.
+
+Only palette values and semantic color mappings are included; mdglance does not bundle these theme
+projects' application code.

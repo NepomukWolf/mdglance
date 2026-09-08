@@ -25,6 +25,10 @@ pub enum ThemePreset {
     Dark,
     TokyoNight,
     Gruvbox,
+    CatppuccinLatte,
+    CatppuccinMocha,
+    SolarizedLight,
+    SolarizedDark,
 }
 
 #[derive(Debug, Clone)]
@@ -138,12 +142,18 @@ impl ThemeConfig {
                 self.dark.colors.css_variables(),
                 self.dark.syntax_css()?,
             )),
-            ThemePreset::Light => Ok(format!(
-                ":root {{ color-scheme: light; }}\n{}\n{}",
-                self.light.colors.css_variables(),
-                self.light.syntax_css()?,
-            )),
-            ThemePreset::Dark | ThemePreset::TokyoNight | ThemePreset::Gruvbox => Ok(format!(
+            ThemePreset::Light | ThemePreset::CatppuccinLatte | ThemePreset::SolarizedLight => {
+                Ok(format!(
+                    ":root {{ color-scheme: light; }}\n{}\n{}",
+                    self.light.colors.css_variables(),
+                    self.light.syntax_css()?,
+                ))
+            }
+            ThemePreset::Dark
+            | ThemePreset::TokyoNight
+            | ThemePreset::Gruvbox
+            | ThemePreset::CatppuccinMocha
+            | ThemePreset::SolarizedDark => Ok(format!(
                 ":root {{ color-scheme: dark; }}\n{}\n{}",
                 self.dark.colors.css_variables(),
                 self.dark.syntax_css()?,
@@ -184,6 +194,42 @@ impl ThemeConfig {
                 dark: ThemeVariant {
                     colors: gruvbox(),
                     syntax_theme: "gruvbox".into(),
+                    syntax_theme_file: None,
+                },
+            },
+            ThemePreset::CatppuccinLatte => Self {
+                preset,
+                light: ThemeVariant {
+                    colors: catppuccin_latte(),
+                    syntax_theme: "catppuccin-latte".into(),
+                    syntax_theme_file: None,
+                },
+                dark: standard_dark,
+            },
+            ThemePreset::CatppuccinMocha => Self {
+                preset,
+                light: standard_light,
+                dark: ThemeVariant {
+                    colors: catppuccin_mocha(),
+                    syntax_theme: "catppuccin-mocha".into(),
+                    syntax_theme_file: None,
+                },
+            },
+            ThemePreset::SolarizedLight => Self {
+                preset,
+                light: ThemeVariant {
+                    colors: solarized_light(),
+                    syntax_theme: "solarized-light".into(),
+                    syntax_theme_file: None,
+                },
+                dark: standard_dark,
+            },
+            ThemePreset::SolarizedDark => Self {
+                preset,
+                light: standard_light,
+                dark: ThemeVariant {
+                    colors: solarized_dark(),
+                    syntax_theme: "solarized-dark".into(),
                     syntax_theme_file: None,
                 },
             },
@@ -281,6 +327,10 @@ impl FromStr for ThemePreset {
             "dark" => Ok(Self::Dark),
             "tokyo-night" => Ok(Self::TokyoNight),
             "gruvbox" => Ok(Self::Gruvbox),
+            "catppuccin-latte" => Ok(Self::CatppuccinLatte),
+            "catppuccin-mocha" => Ok(Self::CatppuccinMocha),
+            "solarized-light" => Ok(Self::SolarizedLight),
+            "solarized-dark" => Ok(Self::SolarizedDark),
             _ => bail!("unknown theme preset `{value}`"),
         }
     }
@@ -395,6 +445,80 @@ fn gruvbox() -> ThemeColors {
     }
 }
 
+// Palettes adapted from Catppuccin by the Catppuccin organization (MIT).
+fn catppuccin_latte() -> ThemeColors {
+    ThemeColors {
+        background: color("#eff1f5"),
+        surface: color("#ccd0da"),
+        text: color("#4c4f69"),
+        muted_text: color("#6c6f85"),
+        heading: color("#8839ef"),
+        link: color("#1e66f5"),
+        border: color("#bcc0cc"),
+        divider: color("#ccd0da"),
+        code_background: color("#e6e9ef"),
+        sidebar_background: color("#e6e9ef"),
+        accent: color("#7287fd"),
+        search_match: color("#df8e1d"),
+        error: color("#d20f39"),
+    }
+}
+
+fn catppuccin_mocha() -> ThemeColors {
+    ThemeColors {
+        background: color("#1e1e2e"),
+        surface: color("#313244"),
+        text: color("#cdd6f4"),
+        muted_text: color("#a6adc8"),
+        heading: color("#cba6f7"),
+        link: color("#89b4fa"),
+        border: color("#45475a"),
+        divider: color("#313244"),
+        code_background: color("#181825"),
+        sidebar_background: color("#181825"),
+        accent: color("#b4befe"),
+        search_match: color("#f9e2af"),
+        error: color("#f38ba8"),
+    }
+}
+
+// Palette adapted from Solarized by Ethan Schoonover (MIT).
+fn solarized_light() -> ThemeColors {
+    ThemeColors {
+        background: color("#fdf6e3"),
+        surface: color("#eee8d5"),
+        text: color("#657b83"),
+        muted_text: color("#93a1a1"),
+        heading: color("#268bd2"),
+        link: color("#268bd2"),
+        border: color("#93a1a1"),
+        divider: color("#eee8d5"),
+        code_background: color("#eee8d5"),
+        sidebar_background: color("#eee8d5"),
+        accent: color("#2aa198"),
+        search_match: color("#b58900"),
+        error: color("#dc322f"),
+    }
+}
+
+fn solarized_dark() -> ThemeColors {
+    ThemeColors {
+        background: color("#002b36"),
+        surface: color("#073642"),
+        text: color("#839496"),
+        muted_text: color("#586e75"),
+        heading: color("#268bd2"),
+        link: color("#268bd2"),
+        border: color("#586e75"),
+        divider: color("#073642"),
+        code_background: color("#073642"),
+        sidebar_background: color("#073642"),
+        accent: color("#2aa198"),
+        search_match: color("#b58900"),
+        error: color("#dc322f"),
+    }
+}
+
 pub fn syntax_class_style() -> ClassStyle {
     ClassStyle::SpacedPrefixed {
         prefix: SYNTAX_PREFIX,
@@ -450,6 +574,18 @@ fn syntax_theme(id: &str) -> Result<Theme> {
         "base16-ocean-light" => Some("base16-ocean.light"),
         "tokyo-night" => return Ok(palette_syntax_theme("Tokyo Night", tokyo_syntax_palette())),
         "gruvbox" => return Ok(palette_syntax_theme("Gruvbox", gruvbox_syntax_palette())),
+        "catppuccin-latte" => {
+            return Ok(palette_syntax_theme(
+                "Catppuccin Latte",
+                catppuccin_latte_syntax_palette(),
+            ));
+        }
+        "catppuccin-mocha" => {
+            return Ok(palette_syntax_theme(
+                "Catppuccin Mocha",
+                catppuccin_mocha_syntax_palette(),
+            ));
+        }
         _ => bail!("unknown syntax theme `{id}`"),
     };
     Ok(DEFAULT_THEMES
@@ -496,6 +632,34 @@ fn gruvbox_syntax_palette() -> SyntaxPalette {
         type_name: color("#8ec07c"),
         operator: color("#fe8019"),
         invalid: color("#cc241d"),
+    }
+}
+
+fn catppuccin_latte_syntax_palette() -> SyntaxPalette {
+    SyntaxPalette {
+        foreground: color("#4c4f69"),
+        comment: color("#7c7f93"),
+        string: color("#40a02b"),
+        number: color("#fe640b"),
+        keyword: color("#8839ef"),
+        function: color("#1e66f5"),
+        type_name: color("#df8e1d"),
+        operator: color("#04a5e5"),
+        invalid: color("#d20f39"),
+    }
+}
+
+fn catppuccin_mocha_syntax_palette() -> SyntaxPalette {
+    SyntaxPalette {
+        foreground: color("#cdd6f4"),
+        comment: color("#9399b2"),
+        string: color("#a6e3a1"),
+        number: color("#fab387"),
+        keyword: color("#cba6f7"),
+        function: color("#89b4fa"),
+        type_name: color("#f9e2af"),
+        operator: color("#89dceb"),
+        invalid: color("#f38ba8"),
     }
 }
 
@@ -606,6 +770,8 @@ syntax_theme = "solarized-dark"
             "base16-ocean-light",
             "tokyo-night",
             "gruvbox",
+            "catppuccin-latte",
+            "catppuccin-mocha",
         ] {
             assert!(syntax_theme(name).is_ok(), "failed to load {name}");
         }
@@ -644,6 +810,24 @@ syntax_theme = "solarized-dark"
         assert!(css.contains("--background: #1a1b26"));
         assert!(!css.contains("prefers-color-scheme"));
         assert!(!css.contains("--background: #ffffff"));
+    }
+
+    #[test]
+    fn additional_presets_resolve_their_canonical_backgrounds() {
+        for (preset, expected_scheme, expected_background) in [
+            ("catppuccin-latte", "light", "#eff1f5"),
+            ("catppuccin-mocha", "dark", "#1e1e2e"),
+            ("solarized-light", "light", "#fdf6e3"),
+            ("solarized-dark", "dark", "#002b36"),
+        ] {
+            let source = format!("preset = \"{preset}\"");
+            let overrides: ThemeOverrides = toml::from_str(&source).unwrap();
+            let css = resolve(overrides).unwrap().css().unwrap();
+
+            assert!(css.contains(&format!("color-scheme: {expected_scheme}")));
+            assert!(css.contains(&format!("--background: {expected_background}")));
+            assert!(!css.contains("prefers-color-scheme"));
+        }
     }
 
     #[test]

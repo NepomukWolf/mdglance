@@ -227,12 +227,17 @@ preset with `theme.preset`:
 
 ```toml
 [theme]
-preset = "tokyo-night" # system, light, dark, tokyo-night, or gruvbox
+preset = "tokyo-night"
 ```
 
 `tokyo-night` uses the Tokyo Night Night terminal palette, while `gruvbox` uses Gruvbox Dark
-Medium. Theme colors and syntax highlighting can be overridden independently for the light and
-dark variants. Overrides are applied on top of the selected preset:
+Medium. Catppuccin is available as `catppuccin-latte` and `catppuccin-mocha`; Solarized is
+available as `solarized-light` and `solarized-dark`. The complete preset list is `system`, `light`,
+`dark`, `tokyo-night`, `gruvbox`, `catppuccin-latte`, `catppuccin-mocha`, `solarized-light`, and
+`solarized-dark`.
+
+Theme colors and syntax highlighting can be overridden independently for the light and dark
+variants. Overrides are applied on top of the selected preset:
 
 ```toml
 [theme]
@@ -258,8 +263,9 @@ Semantic color fields accept six-digit hexadecimal colors (`#RRGGBB`): `backgrou
 
 Available syntax themes are `inspired-github`, `solarized-dark`, `solarized-light`,
 `base16-eighties-dark`, `base16-mocha-dark`, `base16-ocean-dark`, `base16-ocean-light`,
-`tokyo-night`, and `gruvbox`. Syntax highlighting applies to fenced code blocks whose language is
-recognized; other code inherits the active theme's foreground and code background.
+`tokyo-night`, `gruvbox`, `catppuccin-latte`, and `catppuccin-mocha`. Syntax highlighting applies
+to fenced code blocks whose language is recognized; other code inherits the active theme's
+foreground and code background.
 
 You can also use an external TextMate/Syntect `.tmTheme` file for code highlighting:
 
