@@ -1,8 +1,14 @@
 # mdglance
 
-`mdglance` is a small, keyboard-first Markdown and SVG previewer for terminal workflows. It opens a
-native window, refreshes when the source file changes, and keeps the preview separate from your
-editor.
+`mdglance` is a small, keyboard-first Markdown and SVG previewer for terminal workflows.
+
+It is intended for people who write in terminal editors and want to check the rendered result
+without opening a full editor, browser workspace, or project-oriented Markdown application. Point
+it at a file, keep writing, and glance at the native preview whenever you save.
+
+The viewer is deliberately read-only and designed to stay out of the writing loop. Live reload,
+navigation, search, the table of contents, link following, and SVG controls are all available from
+the keyboard, so previewing does not require switching tools or reaching for the mouse.
 
 > [!NOTE]
 > This is an early prototype developed and tested on macOS. It is not yet hardened for untrusted

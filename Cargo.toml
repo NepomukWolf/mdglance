@@ -2,7 +2,13 @@
 name = "mdglance"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88"
+description = "A keyboard-first Markdown and SVG previewer for terminal workflows"
 license = "MIT"
+repository = "https://github.com/NepomukWolf/mdglance"
+readme = "README.md"
+keywords = ["markdown", "preview", "viewer", "svg"]
+categories = ["command-line-utilities", "gui"]
 
 [dependencies]
 anyhow = "1.0"
