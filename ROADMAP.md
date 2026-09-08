@@ -8,18 +8,17 @@ This project should stay focused: a fast native Markdown previewer for people wr
   - Remove the runtime CDN dependency.
   - Make diagrams work offline.
 
+- Add workspace trust and restricted rendering.
+  - Escape raw HTML and SVG in restricted mode.
+  - Block unsafe navigation, remote assets, and out-of-workspace image access.
+  - Require trusted workspaces and an explicit opt-in for PlantUML execution.
+
 ## Near Term
 
 - Pin and document the vendored Mermaid version.
   - Record the exact source URL.
   - Prefer a reproducible update command.
   - Keep the checked-in standalone browser bundle reviewed.
-
-- Harden Markdown rendering.
-  - Escape or strip raw HTML by default.
-  - Add an explicit `--unsafe-html` flag if raw HTML is needed.
-  - Block dangerous URL schemes such as `javascript:`.
-  - Revisit Mermaid `securityLevel` and avoid permissive defaults where possible.
 
 - Improve local asset handling.
   - Watch referenced local images and refresh when they change.
@@ -61,7 +60,6 @@ This project should stay focused: a fast native Markdown previewer for people wr
   - `--no-watch`
   - `--no-open-external`
   - `--theme light|dark|system`
-  - `--unsafe-html`
   - `--window-size WIDTHxHEIGHT`
 
 - Improve path resolution.

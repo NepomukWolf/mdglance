@@ -7,13 +7,14 @@ mod diagrams;
 mod macos;
 mod render;
 mod theme;
+mod trust;
 mod watcher;
 
 use anyhow::{Context, Result, bail};
 use clap::Parser as _;
 use std::{
     io::{self, IsTerminal as _, Read as _},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
 };
 
@@ -90,7 +91,7 @@ fn read_launch_input_from_stdin() -> Result<LaunchInput> {
     Ok(LaunchInput { file, queue: files })
 }
 
-fn canonicalize_existing_file(path: &PathBuf) -> Result<PathBuf> {
+fn canonicalize_existing_file(path: &Path) -> Result<PathBuf> {
     let path = path
         .canonicalize()
         .with_context(|| format!("failed to resolve {}", path.display()))?;

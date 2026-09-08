@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
     env, fmt,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, bail};
@@ -23,6 +23,7 @@ pub struct Config {
     pub window: WindowConfig,
     pub toc: TocConfig,
     pub theme: ThemeConfig,
+    pub diagrams: DiagramConfig,
     keybindings: BTreeMap<Action, Vec<KeyBinding>>,
 }
 
@@ -38,6 +39,11 @@ pub struct WindowConfig {
 pub struct TocConfig {
     pub visible_on_start: bool,
     pub max_depth: u8,
+}
+
+#[derive(Debug, Clone)]
+pub struct DiagramConfig {
+    pub plantuml: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
@@ -71,6 +77,7 @@ pub enum Action {
     ZoomIn,
     ZoomOut,
     ResetView,
+    ManageTrust,
     Quit,
 }
 
@@ -118,7 +125,15 @@ struct FileConfig {
     #[serde(default)]
     theme: ThemeOverrides,
     #[serde(default)]
+    diagrams: DiagramOverrides,
+    #[serde(default)]
     keybindings: HashMap<String, Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct DiagramOverrides {
+    plantuml: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -138,8 +153,8 @@ struct TocOverrides {
 }
 
 impl Config {
-    pub fn load() -> Result<Self> {
-        let source = config_source()?;
+    pub fn load_for_workspace(workspace: &Path, trusted: bool) -> Result<Self> {
+        let source = config_source(workspace, trusted)?;
         let mut config = Self::default();
 
         let Some(source) = source else {
@@ -180,6 +195,9 @@ impl Config {
         }
         if let Some(max_depth) = file_config.toc.max_depth {
             self.toc.max_depth = max_depth.max(1);
+        }
+        if let Some(plantuml) = file_config.diagrams.plantuml {
+            self.diagrams.plantuml = plantuml;
         }
 
         for (name, shortcuts) in file_config.keybindings {
@@ -278,6 +296,7 @@ impl Default for Config {
             visible_on_start: false,
             max_depth: 3,
         };
+        let diagrams = DiagramConfig { plantuml: false };
         let keybindings = default_keybindings()
             .into_iter()
             .map(|(action, displays)| {
@@ -294,6 +313,7 @@ impl Default for Config {
             window,
             toc,
             theme: ThemeConfig::default(),
+            diagrams,
             keybindings,
         }
     }
@@ -330,6 +350,7 @@ impl Action {
             Action::ZoomIn,
             Action::ZoomOut,
             Action::ResetView,
+            Action::ManageTrust,
             Action::Quit,
         ]
     }
@@ -364,6 +385,7 @@ impl Action {
             "zoom_in" => Action::ZoomIn,
             "zoom_out" => Action::ZoomOut,
             "reset_view" => Action::ResetView,
+            "manage_trust" => Action::ManageTrust,
             "quit" => Action::Quit,
             _ => return None,
         })
@@ -399,13 +421,16 @@ impl Action {
             Action::ZoomIn => "zoom_in",
             Action::ZoomOut => "zoom_out",
             Action::ResetView => "reset_view",
+            Action::ManageTrust => "manage_trust",
             Action::Quit => "quit",
         }
     }
 
     fn scope(self) -> u8 {
         match self {
-            Action::Quit | Action::ShowHelp | Action::ToggleToc => SCOPE_GLOBAL,
+            Action::Quit | Action::ShowHelp | Action::ToggleToc | Action::ManageTrust => {
+                SCOPE_GLOBAL
+            }
             Action::ToggleFocus => SCOPE_DOCUMENT | SCOPE_TOC,
             Action::CloseOverlay => SCOPE_SEARCH | SCOPE_HELP,
             Action::AcceptSearch => SCOPE_SEARCH,
@@ -429,12 +454,17 @@ impl Action {
     }
 }
 
-fn config_source() -> Result<Option<PathBuf>> {
+fn config_source(workspace: &Path, trusted: bool) -> Result<Option<PathBuf>> {
     let project = env::current_dir()
         .context("failed to resolve current working directory")?
         .join(PROJECT_CONFIG_NAME);
-    if project.is_file() {
-        return Ok(Some(project));
+    if trusted && project.is_file() {
+        let project = project
+            .canonicalize()
+            .with_context(|| format!("failed to resolve {}", project.display()))?;
+        if project.starts_with(workspace) {
+            return Ok(Some(project));
+        }
     }
 
     let Some(home) = config_home_dir() else {
@@ -486,6 +516,7 @@ fn default_keybindings() -> Vec<(Action, Vec<&'static str>)> {
         (Action::ZoomIn, vec!["=", "Shift+="]),
         (Action::ZoomOut, vec!["-"]),
         (Action::ResetView, vec!["0"]),
+        (Action::ManageTrust, vec!["Shift+T"]),
         (Action::Quit, default_quit_bindings()),
     ]
 }
@@ -702,6 +733,13 @@ mod tests {
 
         assert!(config.window.fullscreen);
         assert!(!config.window.maximized);
+    }
+
+    #[test]
+    fn plantuml_is_opt_in() {
+        assert!(!Config::default().diagrams.plantuml);
+        let config = config_from_toml("[diagrams]\nplantuml = true").unwrap();
+        assert!(config.diagrams.plantuml);
     }
 
     #[test]

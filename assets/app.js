@@ -1,9 +1,11 @@
-const mermaidScript = document.createElement("script");
-mermaidScript.text = window.__MDVIEW_MERMAID_SOURCE;
-document.head.appendChild(mermaidScript);
-
-const mermaid = globalThis.mermaid;
-mermaid.initialize({ startOnLoad: false, securityLevel: "loose" });
+let mermaid = null;
+if (window.__MDVIEW_MERMAID_SOURCE) {
+  const mermaidScript = document.createElement("script");
+  mermaidScript.text = window.__MDVIEW_MERMAID_SOURCE;
+  document.head.appendChild(mermaidScript);
+  mermaid = globalThis.mermaid;
+  mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
+}
 
 const config = window.__MDGLANCE_CONFIG;
 const initialState = window.__MDGLANCE_INITIAL_STATE;
@@ -18,12 +20,21 @@ const searchInput = document.getElementById("search-input");
 const searchStatus = document.getElementById("search-status");
 const helpOverlay = document.getElementById("help-overlay");
 const helpList = document.getElementById("help-list");
+const trustIndicator = document.getElementById("trust-indicator");
+const trustOverlay = document.getElementById("trust-overlay");
+const trustWorkspace = document.getElementById("trust-workspace");
+const trustError = document.getElementById("trust-error");
+const trustFolderButton = document.getElementById("trust-folder");
+const openRestrictedButton = document.getElementById("open-restricted");
+const closeTrustButton = document.getElementById("close-trust");
 const linkHintsLayer = document.createElement("div");
 linkHintsLayer.className = "link-hints hidden";
 document.body.append(linkHintsLayer);
 
 const state = {
   documentKind: initialState.document_kind,
+  trustState: initialState.trust_state,
+  workspace: initialState.workspace,
   focusMode: "document",
   tocVisible: config.toc.visible_on_start,
   tocItems: [],
@@ -81,6 +92,7 @@ const ACTIONS = [
   { id: "zoom_in", description: "SVG: zoom in" },
   { id: "zoom_out", description: "SVG: zoom out" },
   { id: "reset_view", description: "SVG: reset view" },
+  { id: "manage_trust", description: "Open workspace trust controls" },
   { id: "quit", description: "Quit" },
 ];
 
@@ -89,7 +101,13 @@ const orderedBindings = config.keybindings.flatMap((binding) =>
   binding.shortcuts.map((shortcut) => ({ action: binding.action, shortcut })),
 );
 
-const GLOBAL_ACTIONS = new Set(["quit", "show_help", "toggle_toc", "close_overlay"]);
+const GLOBAL_ACTIONS = new Set([
+  "quit",
+  "show_help",
+  "toggle_toc",
+  "close_overlay",
+  "manage_trust",
+]);
 const SEARCH_ACTIONS = new Set(["accept_search", "close_overlay", "quit"]);
 const DOCUMENT_ACTIONS = new Set([
   "scroll_down",
@@ -156,6 +174,9 @@ function allowedActionsFor() {
 }
 
 async function renderMermaid() {
+  if (!mermaid) {
+    return;
+  }
   const nodes = document.querySelectorAll("pre.mermaid");
   for (const node of nodes) {
     node.removeAttribute("data-processed");
@@ -412,6 +433,77 @@ function closeSearch(clear) {
 function toggleHelp(show) {
   helpOverlay.classList.toggle("hidden", !show);
 }
+
+function updateTrustUi() {
+  const restricted = state.trustState !== "trusted";
+  trustIndicator.classList.toggle("hidden", !restricted);
+  trustIndicator.textContent = "Restricted — folder not trusted";
+  trustIndicator.title = `Open trust controls for ${state.workspace}`;
+  trustWorkspace.textContent = state.workspace;
+}
+
+function showTrustDialog(initial = false) {
+  trustError.classList.add("hidden");
+  trustError.textContent = "";
+  trustOverlay.dataset.initial = initial ? "true" : "false";
+  closeTrustButton.textContent = initial ? "Close" : "Cancel";
+  trustOverlay.classList.remove("hidden");
+  openRestrictedButton.focus();
+}
+
+function closeTrustDialog() {
+  trustOverlay.classList.add("hidden");
+  content.focus();
+}
+
+function trustDialogButtons() {
+  return [trustFolderButton, openRestrictedButton, closeTrustButton];
+}
+
+trustIndicator.addEventListener("click", () => showTrustDialog(false));
+trustFolderButton.addEventListener("click", () => {
+  trustFolderButton.disabled = true;
+  sendIpc({ type: "trust_workspace" });
+});
+openRestrictedButton.addEventListener("click", () => {
+  state.trustState = "restricted";
+  sendIpc({ type: "open_restricted" });
+  closeTrustDialog();
+  updateTrustUi();
+});
+closeTrustButton.addEventListener("click", () => {
+  if (trustOverlay.dataset.initial === "true") {
+    sendIpc({ type: "close" });
+  } else {
+    closeTrustDialog();
+  }
+});
+
+trustOverlay.addEventListener("keydown", (event) => {
+  const buttons = trustDialogButtons();
+  const focusedIndex = buttons.indexOf(document.activeElement);
+  const index = focusedIndex < 0 ? 0 : focusedIndex;
+  if (event.key === "Escape") {
+    closeTrustButton.click();
+    event.preventDefault();
+  } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+    buttons[(index + 1 + buttons.length) % buttons.length].focus();
+    event.preventDefault();
+  } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+    buttons[(index - 1 + buttons.length) % buttons.length].focus();
+    event.preventDefault();
+  } else if (event.key === "Tab") {
+    const direction = event.shiftKey ? -1 : 1;
+    buttons[(index + direction + buttons.length) % buttons.length].focus();
+    event.preventDefault();
+  }
+});
+
+window.__mdglanceShowTrustError = function (message) {
+  trustFolderButton.disabled = false;
+  trustError.textContent = message;
+  trustError.classList.remove("hidden");
+};
 
 function sendIpc(message) {
   window.ipc.postMessage(JSON.stringify(message));
@@ -889,6 +981,12 @@ function performAction(action) {
       return zoomSvgBy(1 / 1.2);
     case "reset_view":
       return resetSvgView();
+    case "manage_trust":
+      if (state.trustState !== "trusted") {
+        showTrustDialog(false);
+        return true;
+      }
+      return false;
     case "half_page_down":
       if (helpOpen) {
         return helpScroll(page / 2);
@@ -1022,6 +1120,9 @@ searchInput.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("keydown", (event) => {
+  if (!trustOverlay.classList.contains("hidden")) {
+    return;
+  }
   if (state.linkHintMode) {
     if (handleLinkHintKey(event)) {
       event.preventDefault();
@@ -1061,9 +1162,8 @@ content.addEventListener("click", (event) => {
     return;
   }
 
-  if (activateLinkElement(link)) {
-    event.preventDefault();
-  }
+  event.preventDefault();
+  activateLinkElement(link);
 });
 
 window.addEventListener(
@@ -1086,6 +1186,10 @@ renderHelp();
 refreshHeadings();
 syncActiveHeading();
 updateTocState();
+updateTrustUi();
+if (state.trustState === "pending") {
+  showTrustDialog(true);
+}
 if (state.documentKind === "svg") {
   bindSvgViewer();
   resetSvgView();

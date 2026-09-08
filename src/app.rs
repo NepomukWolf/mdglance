@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
@@ -18,7 +18,9 @@ use wry::WebViewBuilder;
 
 use crate::{
     config::{Action, Config},
-    render, watcher,
+    render,
+    trust::{self, TrustState, TrustStore},
+    watcher,
 };
 
 #[derive(Debug, Clone)]
@@ -31,11 +33,15 @@ pub enum UserEvent {
     Forward { scroll_ratio: f64 },
     PreviousQueuedFile { scroll_ratio: f64 },
     NextQueuedFile { scroll_ratio: f64 },
+    TrustWorkspace,
+    OpenRestricted,
     WatchError(String),
 }
 
 pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
-    let config = Config::load()?;
+    let trust_store = TrustStore::new()?;
+    let mut session_restricted = HashSet::new();
+    let mut workspace = workspace_context(&file, &trust_store, &session_restricted)?;
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     #[cfg(target_os = "macos")]
@@ -60,11 +66,11 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
     let mut window_builder = WindowBuilder::new()
         .with_title(title)
         .with_inner_size(LogicalSize::new(
-            f64::from(config.window.width),
-            f64::from(config.window.height),
+            f64::from(workspace.config.window.width),
+            f64::from(workspace.config.window.height),
         ))
-        .with_maximized(config.window.maximized);
-    if config.window.fullscreen {
+        .with_maximized(workspace.config.window.maximized);
+    if workspace.config.window.fullscreen {
         window_builder = window_builder.with_fullscreen(Some(Fullscreen::Borderless(None)));
     }
     let window = window_builder
@@ -73,7 +79,12 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
     #[cfg(target_os = "macos")]
     let fullscreen_presentation = fullscreen_presentation.observe(&window);
 
-    let html = render::render_document(&current_file, &config)?;
+    let html = render::render_document(
+        &current_file,
+        &workspace.root,
+        workspace.trust_state,
+        &workspace.config,
+    )?;
     let webview = WebViewBuilder::new()
         .with_html(html)
         .with_ipc_handler({
@@ -104,6 +115,12 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
                         IpcMessage::NextFile { scroll_ratio } => {
                             let _ = proxy.send_event(UserEvent::NextQueuedFile { scroll_ratio });
                         }
+                        IpcMessage::TrustWorkspace => {
+                            let _ = proxy.send_event(UserEvent::TrustWorkspace);
+                        }
+                        IpcMessage::OpenRestricted => {
+                            let _ = proxy.send_event(UserEvent::OpenRestricted);
+                        }
                     }
                 }
             }
@@ -115,7 +132,9 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
                     let _ = proxy.send_event(UserEvent::OpenExternal(url.to_string()));
                     false
                 } else {
-                    true
+                    Url::parse(&url)
+                        .ok()
+                        .is_some_and(|url| matches!(url.scheme(), "about" | "data"))
                 }
             }
         })
@@ -129,7 +148,12 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
 
         match event {
             TaoEvent::UserEvent(UserEvent::Reload) => {
-                match render::render_body(&current_file, &config) {
+                match render::render_body(
+                    &current_file,
+                    &workspace.root,
+                    workspace.trust_state,
+                    &workspace.config,
+                ) {
                     Ok(rendered) => {
                         let payload = serde_json::json!({
                             "title": display_name(&current_file),
@@ -180,7 +204,9 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
                     &mut scroll_positions,
                     &queued_files,
                     queue_index,
-                    &config,
+                    &mut workspace,
+                    &trust_store,
+                    &session_restricted,
                     &window,
                     &webview,
                 ) {
@@ -199,7 +225,9 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
                     &queued_files,
                     queue_index,
                     HistoryDirection::Back,
-                    &config,
+                    &mut workspace,
+                    &trust_store,
+                    &session_restricted,
                     &window,
                     &webview,
                 ) {
@@ -218,7 +246,9 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
                     &queued_files,
                     queue_index,
                     HistoryDirection::Forward,
-                    &config,
+                    &mut workspace,
+                    &trust_store,
+                    &session_restricted,
                     &window,
                     &webview,
                 ) {
@@ -235,7 +265,9 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
                     &queued_files,
                     &mut queue_index,
                     QueueDirection::Previous,
-                    &config,
+                    &mut workspace,
+                    &trust_store,
+                    &session_restricted,
                     &window,
                     &webview,
                 ) {
@@ -252,11 +284,44 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
                     &queued_files,
                     &mut queue_index,
                     QueueDirection::Next,
-                    &config,
+                    &mut workspace,
+                    &trust_store,
+                    &session_restricted,
                     &window,
                     &webview,
                 ) {
                     eprintln!("failed to go to next queued file: {err}");
+                }
+            }
+            TaoEvent::UserEvent(UserEvent::OpenRestricted) => {
+                session_restricted.insert(workspace.root.clone());
+                workspace.trust_state = TrustState::Restricted;
+            }
+            TaoEvent::UserEvent(UserEvent::TrustWorkspace) => {
+                match (|| -> Result<()> {
+                    let config = Config::load_for_workspace(&workspace.root, true)?;
+                    let html = render::render_document(
+                        &current_file,
+                        &workspace.root,
+                        TrustState::Trusted,
+                        &config,
+                    )?;
+                    trust_store.trust(&workspace.root)?;
+                    webview
+                        .load_html(&html)
+                        .context("failed to reload trusted document")?;
+                    apply_window_config(&window, &config);
+                    workspace.trust_state = TrustState::Trusted;
+                    workspace.config = config;
+                    Ok(())
+                })() {
+                    Ok(()) => {}
+                    Err(err) => {
+                        let message = serde_json::to_string(&err.to_string()).unwrap_or_default();
+                        let _ = webview.evaluate_script(&format!(
+                            "window.__mdglanceShowTrustError({message});"
+                        ));
+                    }
                 }
             }
             TaoEvent::WindowEvent {
@@ -271,11 +336,15 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
                         ..
                     },
                 ..
-            } if config.bindings_for(Action::Quit).iter().any(|binding| {
-                binding
-                    .shortcut
-                    .matches_native(&logical_key, current_modifiers)
-            }) =>
+            } if workspace
+                .config
+                .bindings_for(Action::Quit)
+                .iter()
+                .any(|binding| {
+                    binding
+                        .shortcut
+                        .matches_native(&logical_key, current_modifiers)
+                }) =>
             {
                 *control_flow = ControlFlow::Exit;
             }
@@ -313,6 +382,51 @@ enum IpcMessage {
     Forward { scroll_ratio: f64 },
     PreviousFile { scroll_ratio: f64 },
     NextFile { scroll_ratio: f64 },
+    TrustWorkspace,
+    OpenRestricted,
+}
+
+struct WorkspaceContext {
+    root: PathBuf,
+    trust_state: TrustState,
+    config: Config,
+}
+
+fn workspace_context(
+    file: &Path,
+    trust_store: &TrustStore,
+    session_restricted: &HashSet<PathBuf>,
+) -> Result<WorkspaceContext> {
+    let root = trust::workspace_root(file)?;
+    let trust_state = if trust_store.is_trusted(&root) {
+        TrustState::Trusted
+    } else if session_restricted.contains(&root) {
+        TrustState::Restricted
+    } else {
+        TrustState::Pending
+    };
+    let config = Config::load_for_workspace(&root, trust_state == TrustState::Trusted)?;
+    Ok(WorkspaceContext {
+        root,
+        trust_state,
+        config,
+    })
+}
+
+fn apply_window_config(window: &tao::window::Window, config: &Config) {
+    window.set_maximized(config.window.maximized);
+    window.set_fullscreen(
+        config
+            .window
+            .fullscreen
+            .then(|| Fullscreen::Borderless(None)),
+    );
+    if !config.window.maximized && !config.window.fullscreen {
+        window.set_inner_size(LogicalSize::new(
+            f64::from(config.window.width),
+            f64::from(config.window.height),
+        ));
+    }
 }
 
 enum HistoryDirection {
@@ -325,6 +439,7 @@ enum QueueDirection {
     Next,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn navigate_to_href(
     href: &str,
     scroll_ratio: f64,
@@ -336,7 +451,9 @@ fn navigate_to_href(
     scroll_positions: &mut HashMap<PathBuf, f64>,
     queued_files: &[PathBuf],
     queue_index: usize,
-    config: &Config,
+    workspace: &mut WorkspaceContext,
+    trust_store: &TrustStore,
+    session_restricted: &HashSet<PathBuf>,
     window: &tao::window::Window,
     webview: &wry::WebView,
 ) -> Result<()> {
@@ -361,13 +478,16 @@ fn navigate_to_href(
         current_watch_dir,
         watcher,
         scroll_positions,
-        config,
+        workspace,
+        trust_store,
+        session_restricted,
         window,
         webview,
         queue_state,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn navigate_history(
     scroll_ratio: f64,
     current_file: &mut PathBuf,
@@ -379,7 +499,9 @@ fn navigate_history(
     queued_files: &[PathBuf],
     queue_index: usize,
     direction: HistoryDirection,
-    config: &Config,
+    workspace: &mut WorkspaceContext,
+    trust_store: &TrustStore,
+    session_restricted: &HashSet<PathBuf>,
     window: &tao::window::Window,
     webview: &wry::WebView,
 ) -> Result<()> {
@@ -406,13 +528,16 @@ fn navigate_history(
         current_watch_dir,
         watcher,
         scroll_positions,
-        config,
+        workspace,
+        trust_store,
+        session_restricted,
         window,
         webview,
         queue_state,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn open_file(
     target_file: PathBuf,
     anchor: Option<String>,
@@ -420,32 +545,61 @@ fn open_file(
     current_watch_dir: &mut Option<PathBuf>,
     watcher: &mut notify::RecommendedWatcher,
     scroll_positions: &HashMap<PathBuf, f64>,
-    config: &Config,
+    workspace: &mut WorkspaceContext,
+    trust_store: &TrustStore,
+    session_restricted: &HashSet<PathBuf>,
     window: &tao::window::Window,
     webview: &wry::WebView,
     queue_state: Option<(usize, usize)>,
 ) -> Result<()> {
-    let rendered = render::render_body(&target_file, config)?;
+    let next_workspace = workspace_context(&target_file, trust_store, session_restricted)?;
+    let same_security_context = next_workspace.root == workspace.root
+        && next_workspace.trust_state == workspace.trust_state;
+    let body_update = same_security_context
+        .then(|| {
+            render::render_body(
+                &target_file,
+                &next_workspace.root,
+                next_workspace.trust_state,
+                &next_workspace.config,
+            )
+        })
+        .transpose()?;
+    let full_document = (!same_security_context)
+        .then(|| {
+            render::render_document(
+                &target_file,
+                &next_workspace.root,
+                next_workspace.trust_state,
+                &next_workspace.config,
+            )
+        })
+        .transpose()?;
     let next_watch_dir =
-        watcher::retarget_watch(watcher, current_watch_dir.as_ref(), &target_file)?;
+        watcher::retarget_watch(watcher, current_watch_dir.as_deref(), &target_file)?;
     *current_watch_dir = Some(next_watch_dir);
     *current_file = target_file;
-    let payload = serde_json::json!({
-        "title": display_name(current_file),
-        "body": rendered.body,
-        "toc": rendered.toc,
-        "document_kind": rendered.document_kind,
-        "anchor": anchor,
-        "scroll_ratio": scroll_positions.get(current_file).copied().unwrap_or(0.0),
-    });
-    let script = format!("window.__mdglanceUpdate({payload});");
-    webview
-        .evaluate_script(&script)
-        .context("failed to update preview")?;
+    if let Some(rendered) = body_update {
+        let payload = serde_json::json!({
+            "title": display_name(current_file),
+            "body": rendered.body,
+            "toc": rendered.toc,
+            "document_kind": rendered.document_kind,
+            "anchor": anchor,
+            "scroll_ratio": scroll_positions.get(current_file).copied().unwrap_or(0.0),
+        });
+        webview
+            .evaluate_script(&format!("window.__mdglanceUpdate({payload});"))
+            .context("failed to update preview")?;
+    } else if let Some(html) = full_document {
+        webview.load_html(&html).context("failed to load preview")?;
+    }
+    *workspace = next_workspace;
     window.set_title(&window_title(current_file, queue_state));
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn navigate_queue(
     scroll_ratio: f64,
     current_file: &mut PathBuf,
@@ -455,7 +609,9 @@ fn navigate_queue(
     queued_files: &[PathBuf],
     queue_index: &mut usize,
     direction: QueueDirection,
-    config: &Config,
+    workspace: &mut WorkspaceContext,
+    trust_store: &TrustStore,
+    session_restricted: &HashSet<PathBuf>,
     window: &tao::window::Window,
     webview: &wry::WebView,
 ) -> Result<()> {
@@ -484,7 +640,9 @@ fn navigate_queue(
         current_watch_dir,
         watcher,
         scroll_positions,
-        config,
+        workspace,
+        trust_store,
+        session_restricted,
         window,
         webview,
         Some((*queue_index, queued_files.len())),
@@ -576,4 +734,18 @@ pub fn display_name(file: &Path) -> String {
         .and_then(|name| name.to_str())
         .unwrap_or("Markdown")
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::external_url;
+
+    #[test]
+    fn only_http_urls_can_leave_the_webview() {
+        assert!(external_url("https://example.com").is_some());
+        assert!(external_url("http://example.com").is_some());
+        assert!(external_url("javascript:alert(1)").is_none());
+        assert!(external_url("file:///tmp/secret").is_none());
+        assert!(external_url("https://example.com\nfile:///tmp/secret").is_none());
+    }
 }

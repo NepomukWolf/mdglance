@@ -1,4 +1,7 @@
-use std::{path::PathBuf, sync::mpsc};
+use std::{
+    path::{Path, PathBuf},
+    sync::mpsc,
+};
 
 use anyhow::{Context, Result};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -49,8 +52,8 @@ pub fn watch_file(file: PathBuf, proxy: EventLoopProxy<UserEvent>) -> Result<Rec
 
 pub fn retarget_watch(
     watcher: &mut RecommendedWatcher,
-    previous_dir: Option<&PathBuf>,
-    next_file: &PathBuf,
+    previous_dir: Option<&Path>,
+    next_file: &Path,
 ) -> Result<PathBuf> {
     let next_dir = next_file
         .parent()
@@ -58,14 +61,14 @@ pub fn retarget_watch(
         .to_path_buf();
 
     if let Some(previous_dir) = previous_dir
-        && previous_dir != &next_dir
+        && previous_dir != next_dir
     {
         watcher
             .unwatch(previous_dir)
             .with_context(|| format!("failed to unwatch {}", previous_dir.display()))?;
     }
 
-    if previous_dir != Some(&next_dir) {
+    if previous_dir != Some(next_dir.as_path()) {
         watcher
             .watch(&next_dir, RecursiveMode::NonRecursive)
             .with_context(|| format!("failed to watch {}", next_dir.display()))?;

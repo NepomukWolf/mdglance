@@ -11,8 +11,7 @@ navigation, search, the table of contents, link following, and SVG controls are 
 the keyboard, so previewing does not require switching tools or reaching for the mouse.
 
 > [!NOTE]
-> This is an early prototype developed and tested on macOS. It is not yet hardened for untrusted
-> Markdown.
+> This is an early prototype developed and tested primarily on macOS.
 
 ## Features
 
@@ -47,8 +46,13 @@ fd -e md -e svg | cargo run --
 
 Use `[` and `]` to move through the queue.
 
-PlantUML blocks require the `plantuml` executable to be available on `PATH`. Without it, those
-blocks remain readable as source code. Mermaid is bundled and works offline.
+Mermaid is bundled and works offline. PlantUML rendering is disabled by default because it invokes
+a local executable. To enable it for trusted workspaces, install `plantuml` on `PATH` and add:
+
+```toml
+[diagrams]
+plantuml = true
+```
 
 ## Keyboard shortcuts
 
@@ -63,6 +67,7 @@ blocks remain readable as source code. Mermaid is bundled and works offline.
 | `h` / `l` | Markdown history; pan left / right in SVG mode |
 | `[` / `]` | Previous / next queued file |
 | `+` / `-` / `0` | Zoom in / out / reset SVG view |
+| `T` | Open workspace trust controls while restricted |
 | `?`, `Esc`, `q` | Help, close overlay, quit |
 
 Shortcuts can be replaced in the configuration file.
@@ -101,14 +106,21 @@ On macOS, option-click the green window button to use Zoom instead of borderless
 
 ## Security
 
-`mdglance` renders Markdown in a native WebView. Only use it with documents you trust for now:
+The first time `mdglance` opens a folder, it asks whether you trust it. A workspace is the nearest
+parent containing `.git`, or the file's parent folder when it is not in a Git repository. Choose
+**Open Restricted** to view the document safely without saving a decision, or **Trust Folder** to
+remember the folder and enable its active content.
 
-- raw HTML is not sanitized;
-- Mermaid currently uses its `loose` security mode;
-- PlantUML invokes a locally installed executable;
-- external HTTP(S) links open in the default browser.
+Restricted mode keeps Markdown, syntax highlighting, search, navigation, the table of contents,
+and live reload available. It displays raw HTML and SVG as source, leaves Mermaid and PlantUML as
+code, blocks remote and out-of-workspace images, and ignores project configuration. A visible
+**Restricted** control opens the trust dialog with the mouse; press `T` to open it from the
+keyboard. HTTP(S) links open only after explicit activation.
 
-Hardening untrusted input is tracked in [`ROADMAP.md`](ROADMAP.md).
+Trust records are stored as TOML files in the platform application-data directory under
+`mdglance/workspace-trust` (`~/Library/Application Support/mdglance/workspace-trust` on macOS and
+usually `~/.local/share/mdglance/workspace-trust` on Linux). To revoke trust, inspect the `path`
+inside the records and delete the record for that workspace. The next launch will ask again.
 
 ## Development
 

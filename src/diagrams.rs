@@ -12,14 +12,18 @@ pub enum DiagramRender {
     Fallback,
 }
 
-pub fn render_diagram_html(language: Option<&str>, source: &str) -> Option<DiagramRender> {
+pub fn render_diagram_html(
+    language: Option<&str>,
+    source: &str,
+    plantuml_enabled: bool,
+) -> Option<DiagramRender> {
     let language = first_language_token(language?)?;
 
     if MERMAID_RENDERER.supports_language(language) {
         return Some(MERMAID_RENDERER.render(source));
     }
 
-    if is_plantuml_lang(language) {
+    if plantuml_enabled && is_plantuml_lang(language) {
         return Some(PLANTUML_RENDERER.render(source));
     }
 

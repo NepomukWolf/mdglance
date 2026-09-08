@@ -13,6 +13,7 @@ use crate::{
     config::Config,
     diagrams::{self, DiagramRender},
     theme,
+    trust::TrustState,
 };
 
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
@@ -38,23 +39,42 @@ pub enum DocumentKind {
     Svg,
 }
 
-pub fn render_document(file: &Path, config: &Config) -> Result<String> {
-    let rendered = render_body(file, config)?;
+pub fn render_document(
+    file: &Path,
+    workspace: &Path,
+    trust_state: TrustState,
+    config: &Config,
+) -> Result<String> {
+    let rendered = render_body(file, workspace, trust_state, config)?;
     let display_name = app::display_name(file);
     let title = html_escape::encode_text(&display_name).to_string();
-    let mermaid_js = assets::js_string_literal(assets::MERMAID_JS)?;
+    let trusted = trust_state == TrustState::Trusted;
+    let mermaid_js = trusted
+        .then(|| assets::js_string_literal(assets::MERMAID_JS))
+        .transpose()?
+        .unwrap_or_else(|| "null".to_string());
     let theme_css = config.theme.css()?;
     let app_config = inline_json(&config.web_config())?;
     let initial_state = inline_json(&InitialState {
         title: display_name.clone(),
         toc: rendered.toc.clone(),
         document_kind: rendered.document_kind,
+        trust_state,
+        workspace: workspace.display().to_string(),
     })?;
-    let base = file
-        .parent()
-        .map(path_to_file_url)
-        .transpose()?
-        .unwrap_or_default();
+    let base = if trusted {
+        file.parent()
+            .map(path_to_file_url)
+            .transpose()?
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let csp = if trusted {
+        String::new()
+    } else {
+        r#"<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">"#.to_string()
+    };
 
     Ok(format!(
         r#"<!doctype html>
@@ -62,11 +82,13 @@ pub fn render_document(file: &Path, config: &Config) -> Result<String> {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {csp}
   <base href="{base}/">
   <title>{title}</title>
   <style>{css}\n{theme_css}</style>
 </head>
 <body>
+  <button id="trust-indicator" class="trust-indicator hidden" type="button"></button>
   <div id="app-shell" class="app-shell">
     <aside id="toc-panel" class="toc-panel" tabindex="-1" aria-label="Table of contents">
       <div class="toc-header">
@@ -89,6 +111,19 @@ pub fn render_document(file: &Path, config: &Config) -> Result<String> {
       <dl id="help-list"></dl>
     </div>
   </div>
+  <div id="trust-overlay" class="trust-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="trust-title">
+    <div class="trust-dialog">
+      <h2 id="trust-title">Do you trust this folder?</h2>
+      <p>Trusted documents may run embedded HTML and diagrams, load remote images, and use project configuration.</p>
+      <code id="trust-workspace"></code>
+      <p id="trust-error" class="trust-error hidden" role="alert"></p>
+      <div class="trust-actions">
+        <button id="trust-folder" type="button">Trust Folder</button>
+        <button id="open-restricted" type="button">Open Restricted</button>
+        <button id="close-trust" type="button">Close</button>
+      </div>
+    </div>
+  </div>
   <script>
     window.__MDVIEW_MERMAID_SOURCE = {mermaid_js};
     window.__MDGLANCE_CONFIG = {app_config};
@@ -104,20 +139,37 @@ pub fn render_document(file: &Path, config: &Config) -> Result<String> {
     ))
 }
 
-pub fn render_body(file: &Path, config: &Config) -> Result<RenderedContent> {
+pub fn render_body(
+    file: &Path,
+    workspace: &Path,
+    trust_state: TrustState,
+    config: &Config,
+) -> Result<RenderedContent> {
     let source = std::fs::read_to_string(file)
         .with_context(|| format!("failed to read {}", file.display()))?;
     if is_svg_file(file) {
-        return render_svg(&source);
+        return render_svg(&source, trust_state == TrustState::Trusted);
     }
 
     let base_dir = file
         .parent()
         .context("cannot render a file without a parent directory")?;
-    Ok(markdown_to_html(&source, base_dir, config.toc.max_depth))
+    Ok(markdown_to_html(
+        &source,
+        base_dir,
+        workspace,
+        trust_state == TrustState::Trusted,
+        config,
+    ))
 }
 
-fn markdown_to_html(markdown: &str, base_dir: &Path, max_toc_depth: u8) -> RenderedContent {
+fn markdown_to_html(
+    markdown: &str,
+    base_dir: &Path,
+    workspace: &Path,
+    trusted: bool,
+    config: &Config,
+) -> RenderedContent {
     let parser = Parser::new_ext(markdown, markdown_options());
     let mut events = Vec::new();
     let mut toc = Vec::new();
@@ -131,7 +183,7 @@ fn markdown_to_html(markdown: &str, base_dir: &Path, max_toc_depth: u8) -> Rende
                 Event::End(TagEnd::CodeBlock) => {
                     let block = current_block.take().expect("code block state must exist");
                     events.push(Event::Html(CowStr::Boxed(
-                        render_code_block_html(block).into_boxed_str(),
+                        render_code_block_html(block, trusted, config).into_boxed_str(),
                     )));
                 }
                 Event::Text(text) | Event::Code(text) => {
@@ -154,7 +206,7 @@ fn markdown_to_html(markdown: &str, base_dir: &Path, max_toc_depth: u8) -> Rende
                     let final_id = unique_heading_id(slug_source, &mut slug_counts);
                     let level_number = heading_level_number(heading.level);
 
-                    if level_number <= max_toc_depth {
+                    if level_number <= config.toc.max_depth {
                         toc.push(TocItem {
                             id: final_id.clone(),
                             title: if title.is_empty() {
@@ -213,7 +265,9 @@ fn markdown_to_html(markdown: &str, base_dir: &Path, max_toc_depth: u8) -> Rende
                 }
                 other => {
                     let heading = current_heading.as_mut().expect("heading state must exist");
-                    heading.events.push(other.into_static());
+                    heading
+                        .events
+                        .push(restrict_author_html(other, trusted).into_static());
                 }
             }
             continue;
@@ -243,7 +297,8 @@ fn markdown_to_html(markdown: &str, base_dir: &Path, max_toc_depth: u8) -> Rende
                 current_block = Some(CodeBlockCapture::new(kind));
             }
             other => {
-                events.push(rewrite_local_image(other, base_dir).into_static());
+                let event = restrict_author_html(other, trusted);
+                events.push(rewrite_local_image(event, base_dir, workspace, trusted).into_static());
             }
         }
     }
@@ -257,7 +312,17 @@ fn markdown_to_html(markdown: &str, base_dir: &Path, max_toc_depth: u8) -> Rende
     }
 }
 
-fn render_svg(source: &str) -> Result<RenderedContent> {
+fn render_svg(source: &str, trusted: bool) -> Result<RenderedContent> {
+    if !trusted {
+        let source = html_escape::encode_text(source);
+        return Ok(RenderedContent {
+            body: format!(
+                r#"<div class="restricted-document"><p>SVG preview is disabled in restricted mode.</p><pre class="code-block"><code>{source}</code></pre></div>"#
+            ),
+            toc: Vec::new(),
+            document_kind: DocumentKind::Markdown,
+        });
+    }
     let svg = normalize_svg_document(source).context("failed to normalize SVG document")?;
     let body = format!(
         r#"<div class="svg-shell"><div id="svg-viewport" class="svg-viewport"><div id="svg-stage" class="svg-stage">{svg}</div></div></div>"#
@@ -270,7 +335,12 @@ fn render_svg(source: &str) -> Result<RenderedContent> {
     })
 }
 
-fn rewrite_local_image<'a>(event: Event<'a>, base_dir: &Path) -> Event<'a> {
+fn rewrite_local_image<'a>(
+    event: Event<'a>,
+    base_dir: &Path,
+    workspace: &Path,
+    trusted: bool,
+) -> Event<'a> {
     let Event::Start(Tag::Image {
         link_type,
         dest_url,
@@ -281,7 +351,7 @@ fn rewrite_local_image<'a>(event: Event<'a>, base_dir: &Path) -> Event<'a> {
         return event;
     };
 
-    if is_external_url(&dest_url) || dest_url.starts_with("data:") {
+    if trusted && (is_external_url(&dest_url) || dest_url.starts_with("data:")) {
         return Event::Start(Tag::Image {
             link_type,
             dest_url,
@@ -290,7 +360,19 @@ fn rewrite_local_image<'a>(event: Event<'a>, base_dir: &Path) -> Event<'a> {
         });
     }
 
+    if !trusted && (is_external_url(&dest_url) || dest_url.starts_with("data:")) {
+        return blocked_image(link_type, title, id);
+    }
+
     let image_path = base_dir.join(dest_url.as_ref());
+    if !trusted {
+        let Ok(canonical) = image_path.canonicalize() else {
+            return blocked_image(link_type, title, id);
+        };
+        if !canonical.starts_with(workspace) || is_svg_file(&canonical) {
+            return blocked_image(link_type, title, id);
+        }
+    }
     let Some(data_url) = image_data_url(&image_path) else {
         return Event::Start(Tag::Image {
             link_type,
@@ -306,6 +388,29 @@ fn rewrite_local_image<'a>(event: Event<'a>, base_dir: &Path) -> Event<'a> {
         title,
         id,
     })
+}
+
+fn blocked_image<'a>(
+    link_type: pulldown_cmark::LinkType,
+    title: CowStr<'a>,
+    id: CowStr<'a>,
+) -> Event<'a> {
+    Event::Start(Tag::Image {
+        link_type,
+        dest_url: CowStr::Borrowed("data:,"),
+        title,
+        id,
+    })
+}
+
+fn restrict_author_html<'a>(event: Event<'a>, trusted: bool) -> Event<'a> {
+    if trusted {
+        return event;
+    }
+    match event {
+        Event::Html(value) | Event::InlineHtml(value) => Event::Text(value),
+        other => other,
+    }
 }
 
 fn is_external_url(url: &str) -> bool {
@@ -343,8 +448,11 @@ fn markdown_options() -> Options {
         | Options::ENABLE_HEADING_ATTRIBUTES
 }
 
-fn render_code_block_html(block: CodeBlockCapture) -> String {
-    if let Some(diagram) = diagrams::render_diagram_html(block.language(), &block.text) {
+fn render_code_block_html(block: CodeBlockCapture, trusted: bool, config: &Config) -> String {
+    if trusted
+        && let Some(diagram) =
+            diagrams::render_diagram_html(block.language(), &block.text, config.diagrams.plantuml)
+    {
         match diagram {
             DiagramRender::Html(html) => return html,
             DiagramRender::Fallback => {}
@@ -456,6 +564,8 @@ struct InitialState {
     title: String,
     toc: Vec<TocItem>,
     document_kind: DocumentKind,
+    trust_state: TrustState,
+    workspace: String,
 }
 
 struct HeadingCapture {
@@ -529,7 +639,13 @@ mod tests {
 
     #[test]
     fn highlighted_code_uses_prefixed_scope_classes() {
-        let rendered = markdown_to_html("```rust\nfn main() {}\n```", Path::new("."), 3);
+        let rendered = markdown_to_html(
+            "```rust\nfn main() {}\n```",
+            Path::new("."),
+            Path::new("."),
+            true,
+            &Config::default(),
+        );
 
         assert!(
             rendered
@@ -542,7 +658,13 @@ mod tests {
 
     #[test]
     fn unknown_languages_fall_back_to_escaped_plain_code() {
-        let rendered = markdown_to_html("```not-a-language\n<a>&\n```", Path::new("."), 3);
+        let rendered = markdown_to_html(
+            "```not-a-language\n<a>&\n```",
+            Path::new("."),
+            Path::new("."),
+            true,
+            &Config::default(),
+        );
 
         assert!(rendered.body.contains("&lt;a&gt;&amp;"));
         assert!(
@@ -550,5 +672,60 @@ mod tests {
                 .body
                 .contains("class=\"syntect-code language-not-a-language\"")
         );
+    }
+
+    #[test]
+    fn restricted_mode_escapes_html_and_leaves_diagrams_as_code() {
+        let rendered = markdown_to_html(
+            "<script>alert('x')</script>\n\n```mermaid\ngraph TD; A-->B\n```",
+            Path::new("."),
+            Path::new("."),
+            false,
+            &Config::default(),
+        );
+
+        assert!(rendered.body.contains("&lt;script&gt;"));
+        assert!(!rendered.body.contains("<script>"));
+        assert!(!rendered.body.contains("class=\"mermaid\""));
+        assert!(rendered.body.contains("graph TD; A--&gt;B"));
+    }
+
+    #[test]
+    fn restricted_mode_does_not_embed_remote_images() {
+        let rendered = markdown_to_html(
+            "![tracking](https://example.com/pixel.png)",
+            Path::new("."),
+            Path::new("."),
+            false,
+            &Config::default(),
+        );
+
+        assert!(!rendered.body.contains("https://example.com"));
+        assert!(rendered.body.contains("src=\"data:,\""));
+    }
+
+    #[test]
+    fn restricted_svg_is_shown_as_source() {
+        let rendered = render_svg("<svg><script>alert(1)</script></svg>", false).unwrap();
+        assert!(matches!(rendered.document_kind, DocumentKind::Markdown));
+        assert!(rendered.body.contains("&lt;svg&gt;"));
+        assert!(!rendered.body.contains("<script>"));
+    }
+
+    #[test]
+    fn restricted_document_has_csp_and_does_not_embed_mermaid_runtime() {
+        let temp = std::env::temp_dir().join(format!(
+            "mdglance-restricted-document-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&temp).unwrap();
+        let file = temp.join("README.md");
+        std::fs::write(&file, "# Safe preview").unwrap();
+
+        let html = render_document(&file, &temp, TrustState::Pending, &Config::default()).unwrap();
+        assert!(html.contains("Content-Security-Policy"));
+        assert!(html.contains("window.__MDVIEW_MERMAID_SOURCE = null"));
+        assert!(html.contains("Do you trust this folder?"));
+        let _ = std::fs::remove_dir_all(temp);
     }
 }
