@@ -85,7 +85,8 @@ pub fn render_document(
   {csp}
   <base href="{base}/">
   <title>{title}</title>
-  <style>{css}\n{theme_css}</style>
+  <style>{css}</style>
+  <style id="theme-style">{theme_css}</style>
 </head>
 <body>
   <button id="trust-indicator" class="trust-indicator hidden" type="button"></button>
@@ -121,6 +122,17 @@ pub fn render_document(
         <button id="trust-folder" type="button">Trust Folder</button>
         <button id="open-restricted" type="button">Open Restricted</button>
         <button id="close-trust" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+  <div id="theme-overlay" class="theme-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="theme-title">
+    <div class="theme-dialog">
+      <h2 id="theme-title">Choose theme</h2>
+      <div id="theme-list" class="theme-list" role="listbox" tabindex="0"></div>
+      <p id="theme-error" class="theme-error hidden" role="alert"></p>
+      <div class="theme-actions">
+        <button id="apply-theme" type="button">Apply</button>
+        <button id="cancel-theme" type="button">Cancel</button>
       </div>
     </div>
   </div>

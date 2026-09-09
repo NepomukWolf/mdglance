@@ -19,6 +19,7 @@ use wry::WebViewBuilder;
 use crate::{
     config::{Action, Config},
     render,
+    theme::{ThemeCatalog, ThemeConfig},
     trust::{self, TrustState, TrustStore},
     watcher,
 };
@@ -35,6 +36,9 @@ pub enum UserEvent {
     NextQueuedFile { scroll_ratio: f64 },
     TrustWorkspace,
     OpenRestricted,
+    OpenThemePicker,
+    PreviewTheme(String),
+    CommitTheme(String),
     WatchError(String),
 }
 
@@ -61,6 +65,8 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
     let mut scroll_positions = HashMap::<PathBuf, f64>::new();
     let queued_files = build_file_queue(current_file.clone(), queued_files);
     let mut queue_index = 0usize;
+    let mut session_theme: Option<ThemeConfig> = None;
+    let mut theme_catalog = ThemeCatalog::load(true);
 
     let title = window_title(&current_file, Some((queue_index, queued_files.len())));
     let mut window_builder = WindowBuilder::new()
@@ -120,6 +126,15 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
                         }
                         IpcMessage::OpenRestricted => {
                             let _ = proxy.send_event(UserEvent::OpenRestricted);
+                        }
+                        IpcMessage::OpenThemePicker => {
+                            let _ = proxy.send_event(UserEvent::OpenThemePicker);
+                        }
+                        IpcMessage::PreviewTheme { name } => {
+                            let _ = proxy.send_event(UserEvent::PreviewTheme(name));
+                        }
+                        IpcMessage::CommitTheme { name } => {
+                            let _ = proxy.send_event(UserEvent::CommitTheme(name));
                         }
                     }
                 }
@@ -183,6 +198,38 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
             }
             TaoEvent::UserEvent(UserEvent::WatchError(message)) => {
                 eprintln!("watch error: {message}");
+            }
+            TaoEvent::UserEvent(UserEvent::OpenThemePicker) => {
+                theme_catalog = ThemeCatalog::load(true);
+                let active = session_theme
+                    .as_ref()
+                    .map_or(workspace.config.theme.name.as_str(), |theme| {
+                        theme.name.as_str()
+                    });
+                let entries = theme_catalog.picker_entries(active);
+                let payload = serde_json::json!({"entries": entries, "active": active});
+                let _ =
+                    webview.evaluate_script(&format!("window.__mdglanceThemeCatalog({payload});"));
+            }
+            TaoEvent::UserEvent(UserEvent::PreviewTheme(name)) => {
+                if let Ok(css) = theme_catalog.css_for(&name) {
+                    let payload = serde_json::json!({"name": name, "css": css});
+                    let _ = webview
+                        .evaluate_script(&format!("window.__mdglanceApplyTheme({payload});"));
+                }
+            }
+            TaoEvent::UserEvent(UserEvent::CommitTheme(name)) => {
+                if let Ok(theme) = ThemeConfig::named(&name) {
+                    if let Ok(css) = theme.css() {
+                        let payload =
+                            serde_json::json!({"name": name, "css": css, "committed": true});
+                        let _ = webview
+                            .evaluate_script(&format!("window.__mdglanceApplyTheme({payload});"));
+                    }
+                    workspace.config.theme = theme.clone();
+                    workspace.theme_session = true;
+                    session_theme = Some(theme);
+                }
             }
             TaoEvent::UserEvent(UserEvent::Close) => {
                 *control_flow = ControlFlow::Exit;
@@ -299,7 +346,10 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
             }
             TaoEvent::UserEvent(UserEvent::TrustWorkspace) => {
                 match (|| -> Result<()> {
-                    let config = Config::load_for_workspace(&workspace.root, true)?;
+                    let mut config = Config::load_for_workspace(&workspace.root, true)?;
+                    if let Some(theme) = &session_theme {
+                        config.theme = theme.clone();
+                    }
                     let html = render::render_document(
                         &current_file,
                         &workspace.root,
@@ -384,12 +434,16 @@ enum IpcMessage {
     NextFile { scroll_ratio: f64 },
     TrustWorkspace,
     OpenRestricted,
+    OpenThemePicker,
+    PreviewTheme { name: String },
+    CommitTheme { name: String },
 }
 
 struct WorkspaceContext {
     root: PathBuf,
     trust_state: TrustState,
     config: Config,
+    theme_session: bool,
 }
 
 fn workspace_context(
@@ -410,6 +464,7 @@ fn workspace_context(
         root,
         trust_state,
         config,
+        theme_session: false,
     })
 }
 
@@ -552,7 +607,11 @@ fn open_file(
     webview: &wry::WebView,
     queue_state: Option<(usize, usize)>,
 ) -> Result<()> {
-    let next_workspace = workspace_context(&target_file, trust_store, session_restricted)?;
+    let mut next_workspace = workspace_context(&target_file, trust_store, session_restricted)?;
+    if workspace.theme_session {
+        next_workspace.config.theme = workspace.config.theme.clone();
+        next_workspace.theme_session = true;
+    }
     let same_security_context = next_workspace.root == workspace.root
         && next_workspace.trust_state == workspace.trust_state;
     let body_update = same_security_context

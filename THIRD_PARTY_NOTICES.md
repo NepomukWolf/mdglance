@@ -19,5 +19,6 @@ The built-in Solarized Light and Dark palettes are adapted from
 [Solarized](https://github.com/altercation/solarized), copyright Ethan Schoonover, licensed under
 the MIT license.
 
-Only palette values and semantic color mappings are included; mdglance does not bundle these theme
-projects' application code.
+Only palette values and semantic color mappings are included. They are distributed as
+Alacritty-compatible TOML files under `themes/`; mdglance does not bundle these projects'
+application code.

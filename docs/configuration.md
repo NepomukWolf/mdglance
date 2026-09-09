@@ -64,14 +64,20 @@ Otherwise, `plantuml` and `puml` fences remain readable as code.
 
 ## Themes
 
-Select a built-in presentation preset:
+Select a bundled or user-installed Alacritty-compatible palette:
 
 ```toml
 [theme]
-preset = "system"
+name = "system"
 ```
 
-Available presets are:
+`system` is the default when `[theme]` or `theme.name` is omitted. It follows the operating-system
+appearance automatically: light appearance uses the packaged `light.toml`, while dark appearance
+uses the packaged `dark.toml`. These two default palettes are tuned for a GitHub-like Markdown
+presentation: headings use the normal text color, links and interface accents use blue, and search
+matches and errors retain distinct yellow and red colors.
+
+Bundled themes are:
 
 - `system`
 - `light`
@@ -83,8 +89,21 @@ Available presets are:
 - `solarized-light`
 - `solarized-dark`
 
-`system` follows the operating-system appearance and maintains separate light and dark variants.
-Fixed presets always use their corresponding variant.
+Other themes infer light or dark appearance from their background. The legacy `preset` key remains
+an alias for `name`; specifying both is an error.
+
+Install additional `.toml` palettes in `$XDG_CONFIG_HOME/mdglance/themes`, falling back to
+`~/.config/mdglance/themes`. Discovery is non-recursive and refreshes whenever the picker opens.
+The filename stem is used verbatim as its name, and a user file overrides a bundled file with the
+same name. A palette must contain Alacritty's `[colors.primary]`, `[colors.normal]`, and
+`[colors.bright]` tables using `#RRGGBB`; unrelated Alacritty sections are tolerated. This makes it
+possible to download an Alacritty palette from a collection such as TerminalColors and copy it
+directly into the directory. Invalid files appear disabled in the picker. Explicitly configuring a
+missing or invalid theme is a startup error.
+
+Press `p` (`open_theme_picker`) to open the picker. Use `j`/`k`, arrow keys, Home/End, Tab, or the
+mouse; Enter or Apply commits the preview, while Escape or Cancel restores the previous theme.
+Selection is session-only and remains active across reloads, trust changes, and navigation.
 
 ### Variant colors
 
@@ -108,11 +127,19 @@ error = "#f85149"
 ```
 
 Every color must use six-digit `#RRGGBB` notation. Unspecified colors continue to come from the
-selected preset.
+selected theme.
 
 ### Syntax themes
 
-Choose a bundled syntax-highlighting theme per variant:
+Unless overridden, the selected Alacritty palette controls both the application/Markdown colors
+and syntax highlighting. mdglance generates a Syntect syntax theme from the same palette: primary
+foreground is used for ordinary code, while bright black, green, yellow, magenta, blue, and cyan
+are mapped to comments, strings, numbers, keywords, functions, types, and operators; normal red is
+used for invalid syntax. Under `system`, separate syntax themes are generated from `light.toml` and
+`dark.toml` and switch with the operating-system appearance.
+
+To replace that generated syntax theme without changing the Markdown/application palette, choose a
+bundled Syntect theme per appearance variant:
 
 ```toml
 [theme.light]
@@ -135,6 +162,9 @@ Available syntax themes are:
 - `gruvbox`
 - `catppuccin-latte`
 - `catppuccin-mocha`
+
+Any valid catalog theme name can also be used as `syntax_theme`; its ANSI colors generate the
+syntax palette.
 
 An external TextMate `.tmTheme` file can be used instead:
 
@@ -198,6 +228,7 @@ action list and defaults are:
 | `zoom_out` | `-` |
 | `reset_view` | `0` |
 | `manage_trust` | `Shift+T` |
+| `open_theme_picker` | `p` |
 | `quit` | `q`, plus `Cmd+W` and `Cmd+Q` on macOS |
 
 Press `?` inside `mdglance` to see the effective bindings.

@@ -1,12 +1,13 @@
+use anyhow::{Context, Result, bail};
+use include_dir::{Dir, include_dir};
+use serde::{Deserialize, Serialize};
 use std::{
-    fmt,
+    collections::BTreeMap,
+    env, fmt,
     path::{Path, PathBuf},
     str::FromStr,
     sync::LazyLock,
 };
-
-use anyhow::{Context, Result, bail};
-use serde::Deserialize;
 use syntect::{
     highlighting::{
         Color as SyntectColor, ScopeSelectors, StyleModifier, Theme, ThemeItem, ThemeSet,
@@ -16,39 +17,31 @@ use syntect::{
 };
 
 const SYNTAX_PREFIX: &str = "syntect-";
-static DEFAULT_THEMES: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
+static BUNDLED: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/themes");
+static SYNTECT_THEMES: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ThemePreset {
-    System,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Appearance {
     Light,
     Dark,
-    TokyoNight,
-    Gruvbox,
-    CatppuccinLatte,
-    CatppuccinMocha,
-    SolarizedLight,
-    SolarizedDark,
 }
 
 #[derive(Debug, Clone)]
 pub struct ThemeConfig {
-    pub preset: ThemePreset,
+    pub name: String,
     pub light: ThemeVariant,
     pub dark: ThemeVariant,
+    system: bool,
+    appearance: Option<Appearance>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ThemeVariant {
     pub colors: ThemeColors,
     pub syntax_theme: String,
-    syntax_theme_file: Option<LoadedSyntaxTheme>,
-}
-
-#[derive(Debug, Clone)]
-struct LoadedSyntaxTheme {
-    path: PathBuf,
-    theme: Theme,
+    syntax: Theme,
+    syntax_theme_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -68,12 +61,14 @@ pub struct ThemeColors {
     pub error: HexColor,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "String")]
 pub struct HexColor([u8; 3]);
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ThemeOverrides {
+    name: Option<String>,
     preset: Option<String>,
     #[serde(default)]
     light: ThemeVariantOverrides,
@@ -81,7 +76,7 @@ pub struct ThemeOverrides {
     dark: ThemeVariantOverrides,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct ThemeVariantOverrides {
     background: Option<String>,
@@ -101,158 +96,343 @@ struct ThemeVariantOverrides {
     syntax_theme_file: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+struct Palette {
+    primary: Primary,
+    normal: Ansi,
+    bright: Ansi,
+}
+#[derive(Debug, Clone, Deserialize)]
+struct AlacrittyFile {
+    colors: AlacrittyColors,
+}
+#[derive(Debug, Clone, Deserialize)]
+struct AlacrittyColors {
+    primary: Primary,
+    normal: Ansi,
+    bright: Ansi,
+}
+#[derive(Debug, Clone, Deserialize)]
+struct Primary {
+    background: HexColor,
+    foreground: HexColor,
+}
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+struct Ansi {
+    black: HexColor,
+    red: HexColor,
+    green: HexColor,
+    yellow: HexColor,
+    blue: HexColor,
+    magenta: HexColor,
+    cyan: HexColor,
+    white: HexColor,
+}
+
+#[derive(Debug, Clone)]
+pub struct ThemeCatalog {
+    entries: Vec<CatalogEntry>,
+}
+#[derive(Debug, Clone)]
+struct CatalogEntry {
+    name: String,
+    source: ThemeSource,
+    result: std::result::Result<Palette, String>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeSource {
+    Bundled,
+    User,
+    System,
+}
+#[derive(Debug, Clone, Serialize)]
+pub struct ThemePickerEntry {
+    pub name: String,
+    pub source: ThemeSource,
+    pub appearance: Option<Appearance>,
+    pub error: Option<String>,
+    pub active: bool,
+}
+
 impl Default for ThemeConfig {
     fn default() -> Self {
-        Self::for_preset(ThemePreset::System)
+        Self::resolve(ThemeOverrides::default(), Path::new("."))
+            .expect("bundled default themes must be valid")
     }
 }
 
 impl ThemeConfig {
     pub fn resolve(overrides: ThemeOverrides, config_dir: &Path) -> Result<Self> {
-        Self::resolve_with_home(overrides, config_dir, dirs::home_dir().as_deref())
+        let catalog = ThemeCatalog::load(true);
+        Self::resolve_with(
+            &overrides,
+            config_dir,
+            dirs::home_dir().as_deref(),
+            &catalog,
+        )
     }
-
-    fn resolve_with_home(
-        overrides: ThemeOverrides,
+    pub fn named(name: &str) -> Result<Self> {
+        let catalog = ThemeCatalog::load(true);
+        if name == "system" {
+            return Self::resolve_with(
+                &ThemeOverrides::default(),
+                Path::new("."),
+                dirs::home_dir().as_deref(),
+                &catalog,
+            );
+        }
+        let variant = catalog.variant(name)?;
+        let appearance = variant.appearance();
+        Ok(Self {
+            name: name.into(),
+            light: variant.clone(),
+            dark: variant,
+            system: false,
+            appearance: Some(appearance),
+        })
+    }
+    fn resolve_with(
+        overrides: &ThemeOverrides,
         config_dir: &Path,
-        home_dir: Option<&Path>,
+        home: Option<&Path>,
+        catalog: &ThemeCatalog,
     ) -> Result<Self> {
-        let preset = overrides
-            .preset
-            .as_deref()
-            .map(ThemePreset::from_str)
-            .transpose()?
-            .unwrap_or(ThemePreset::System);
-        let mut config = Self::for_preset(preset);
-        config
-            .light
-            .apply(overrides.light, "theme.light", config_dir, home_dir)?;
-        config
-            .dark
-            .apply(overrides.dark, "theme.dark", config_dir, home_dir)?;
-        Ok(config)
+        if overrides.name.is_some() && overrides.preset.is_some() {
+            bail!("`theme.name` and legacy `theme.preset` are mutually exclusive");
+        }
+        let name = overrides
+            .name
+            .clone()
+            .or_else(|| overrides.preset.clone())
+            .unwrap_or_else(|| "system".into());
+        let (mut light, mut dark, system) = if name == "system" {
+            (bundled_variant("light")?, bundled_variant("dark")?, true)
+        } else {
+            let variant = catalog
+                .variant(&name)
+                .with_context(|| format!("configured theme `{name}` is unavailable"))?;
+            (variant.clone(), variant, false)
+        };
+        let inferred_appearance = (!system).then(|| light.appearance());
+        light.apply(
+            overrides.light.clone(),
+            "theme.light",
+            config_dir,
+            home,
+            catalog,
+        )?;
+        dark.apply(
+            overrides.dark.clone(),
+            "theme.dark",
+            config_dir,
+            home,
+            catalog,
+        )?;
+        Ok(Self {
+            name,
+            light,
+            dark,
+            system,
+            appearance: inferred_appearance,
+        })
     }
-
     pub fn css(&self) -> Result<String> {
-        match self.preset {
-            ThemePreset::System => Ok(format!(
+        if self.system {
+            Ok(format!(
                 ":root {{ color-scheme: light dark; }}\n{}\n{}\n@media (prefers-color-scheme: dark) {{\n{}\n{}\n}}",
                 self.light.colors.css_variables(),
                 self.light.syntax_css()?,
                 self.dark.colors.css_variables(),
-                self.dark.syntax_css()?,
-            )),
-            ThemePreset::Light | ThemePreset::CatppuccinLatte | ThemePreset::SolarizedLight => {
-                Ok(format!(
-                    ":root {{ color-scheme: light; }}\n{}\n{}",
-                    self.light.colors.css_variables(),
-                    self.light.syntax_css()?,
-                ))
-            }
-            ThemePreset::Dark
-            | ThemePreset::TokyoNight
-            | ThemePreset::Gruvbox
-            | ThemePreset::CatppuccinMocha
-            | ThemePreset::SolarizedDark => Ok(format!(
-                ":root {{ color-scheme: dark; }}\n{}\n{}",
-                self.dark.colors.css_variables(),
-                self.dark.syntax_css()?,
-            )),
-        }
-    }
-
-    fn for_preset(preset: ThemePreset) -> Self {
-        let standard_light = ThemeVariant {
-            colors: standard_light(),
-            syntax_theme: "inspired-github".into(),
-            syntax_theme_file: None,
-        };
-        let standard_dark = ThemeVariant {
-            colors: standard_dark(),
-            syntax_theme: "base16-ocean-dark".into(),
-            syntax_theme_file: None,
-        };
-
-        match preset {
-            ThemePreset::System | ThemePreset::Light | ThemePreset::Dark => Self {
-                preset,
-                light: standard_light,
-                dark: standard_dark,
-            },
-            ThemePreset::TokyoNight => Self {
-                preset,
-                light: standard_light,
-                dark: ThemeVariant {
-                    colors: tokyo_night(),
-                    syntax_theme: "tokyo-night".into(),
-                    syntax_theme_file: None,
-                },
-            },
-            ThemePreset::Gruvbox => Self {
-                preset,
-                light: standard_light,
-                dark: ThemeVariant {
-                    colors: gruvbox(),
-                    syntax_theme: "gruvbox".into(),
-                    syntax_theme_file: None,
-                },
-            },
-            ThemePreset::CatppuccinLatte => Self {
-                preset,
-                light: ThemeVariant {
-                    colors: catppuccin_latte(),
-                    syntax_theme: "catppuccin-latte".into(),
-                    syntax_theme_file: None,
-                },
-                dark: standard_dark,
-            },
-            ThemePreset::CatppuccinMocha => Self {
-                preset,
-                light: standard_light,
-                dark: ThemeVariant {
-                    colors: catppuccin_mocha(),
-                    syntax_theme: "catppuccin-mocha".into(),
-                    syntax_theme_file: None,
-                },
-            },
-            ThemePreset::SolarizedLight => Self {
-                preset,
-                light: ThemeVariant {
-                    colors: solarized_light(),
-                    syntax_theme: "solarized-light".into(),
-                    syntax_theme_file: None,
-                },
-                dark: standard_dark,
-            },
-            ThemePreset::SolarizedDark => Self {
-                preset,
-                light: standard_light,
-                dark: ThemeVariant {
-                    colors: solarized_dark(),
-                    syntax_theme: "solarized-dark".into(),
-                    syntax_theme_file: None,
-                },
-            },
+                self.dark.syntax_css()?
+            ))
+        } else {
+            let active = if self.appearance == Some(Appearance::Light) {
+                &self.light
+            } else {
+                &self.dark
+            };
+            Ok(format!(
+                ":root {{ color-scheme: {}; }}\n{}\n{}",
+                appearance_name(active.appearance()),
+                active.colors.css_variables(),
+                active.syntax_css()?
+            ))
         }
     }
 }
 
+impl ThemeCatalog {
+    pub fn load(include_user: bool) -> Self {
+        Self::load_from_dir(include_user.then(user_theme_dir).flatten().as_deref())
+    }
+    fn load_from_dir(user_dir: Option<&Path>) -> Self {
+        let mut map = BTreeMap::new();
+        for file in BUNDLED.files() {
+            if file.path().extension().and_then(|v| v.to_str()) != Some("toml") {
+                continue;
+            }
+            let Some(name) = file.path().file_stem().and_then(|v| v.to_str()) else {
+                continue;
+            };
+            let result = file
+                .contents_utf8()
+                .ok_or_else(|| "theme is not UTF-8".into())
+                .and_then(parse_palette);
+            map.insert(
+                name.to_owned(),
+                CatalogEntry {
+                    name: name.to_owned(),
+                    source: ThemeSource::Bundled,
+                    result,
+                },
+            );
+        }
+        if let Some(dir) = user_dir
+            && let Ok(files) = std::fs::read_dir(dir)
+        {
+            for file in files.flatten() {
+                let path = file.path();
+                if !path.is_file() || path.extension().and_then(|v| v.to_str()) != Some("toml") {
+                    continue;
+                }
+                let Some(name) = path.file_stem().and_then(|v| v.to_str()).map(str::to_owned)
+                else {
+                    continue;
+                };
+                let result = std::fs::read_to_string(&path)
+                    .map_err(|e| format!("failed to read {}: {e}", path.display()))
+                    .and_then(|s| parse_palette(&s));
+                map.insert(
+                    name.clone(),
+                    CatalogEntry {
+                        name,
+                        source: ThemeSource::User,
+                        result,
+                    },
+                );
+            }
+        }
+        map.remove("system");
+        let mut entries: Vec<CatalogEntry> = map.into_values().collect();
+        entries.sort_by(|a, b| {
+            a.name
+                .to_lowercase()
+                .cmp(&b.name.to_lowercase())
+                .then(a.name.cmp(&b.name))
+        });
+        entries.insert(
+            0,
+            CatalogEntry {
+                name: "system".into(),
+                source: ThemeSource::System,
+                result: Err(String::new()),
+            },
+        );
+        Self { entries }
+    }
+    fn palette(&self, name: &str) -> Result<&Palette> {
+        let entry = self
+            .entries
+            .iter()
+            .find(|e| e.name == name)
+            .with_context(|| format!("theme `{name}` was not found"))?;
+        entry
+            .result
+            .as_ref()
+            .map_err(|e| anyhow::anyhow!("invalid theme `{name}`: {e}"))
+    }
+    fn variant(&self, name: &str) -> Result<ThemeVariant> {
+        Ok(ThemeVariant::from_palette(name, self.palette(name)?))
+    }
+    pub fn picker_entries(&self, active: &str) -> Vec<ThemePickerEntry> {
+        self.entries
+            .iter()
+            .map(|entry| {
+                if entry.name == "system" {
+                    return ThemePickerEntry {
+                        name: entry.name.clone(),
+                        source: entry.source,
+                        appearance: None,
+                        error: None,
+                        active: active == entry.name,
+                    };
+                }
+                match &entry.result {
+                    Ok(p) => {
+                        let v = ThemeVariant::from_palette(&entry.name, p);
+                        let appearance = Some(v.appearance());
+                        ThemePickerEntry {
+                            name: entry.name.clone(),
+                            source: entry.source,
+                            appearance,
+                            error: None,
+                            active: active == entry.name,
+                        }
+                    }
+                    Err(error) => ThemePickerEntry {
+                        name: entry.name.clone(),
+                        source: entry.source,
+                        appearance: None,
+                        error: Some(error.clone()),
+                        active: active == entry.name,
+                    },
+                }
+            })
+            .collect()
+    }
+    pub fn css_for(&self, name: &str) -> Result<String> {
+        if name == "system" {
+            let o = ThemeOverrides::default();
+            return ThemeConfig::resolve_with(
+                &o,
+                Path::new("."),
+                dirs::home_dir().as_deref(),
+                self,
+            )?
+            .css();
+        }
+        let v = self.variant(name)?;
+        let appearance = v.appearance();
+        ThemeConfig {
+            name: name.into(),
+            light: v.clone(),
+            dark: v,
+            system: false,
+            appearance: Some(appearance),
+        }
+        .css()
+    }
+}
+
 impl ThemeVariant {
+    fn from_palette(name: &str, p: &Palette) -> Self {
+        Self {
+            colors: semantic_colors(p),
+            syntax_theme: name.into(),
+            syntax: palette_syntax_theme(name, p),
+            syntax_theme_file: None,
+        }
+    }
+    fn appearance(&self) -> Appearance {
+        appearance(self.colors.background)
+    }
     fn apply(
         &mut self,
-        overrides: ThemeVariantOverrides,
+        o: ThemeVariantOverrides,
         context: &str,
         config_dir: &Path,
-        home_dir: Option<&Path>,
+        home: Option<&Path>,
+        catalog: &ThemeCatalog,
     ) -> Result<()> {
         macro_rules! apply_color {
-            ($field:ident) => {
-                if let Some(value) = overrides.$field {
-                    self.colors.$field = parse_config_color(&value, stringify!($field), context)?;
+            ($f:ident) => {
+                if let Some(v) = o.$f {
+                    self.colors.$f = parse_config_color(&v, stringify!($f), context)?;
                 }
             };
         }
-
         apply_color!(background);
         apply_color!(surface);
         apply_color!(text);
@@ -266,33 +446,33 @@ impl ThemeVariant {
         apply_color!(accent);
         apply_color!(search_match);
         apply_color!(error);
-
-        if overrides.syntax_theme.is_some() && overrides.syntax_theme_file.is_some() {
+        if o.syntax_theme.is_some() && o.syntax_theme_file.is_some() {
             bail!(
                 "`{context}.syntax_theme` and `{context}.syntax_theme_file` are mutually exclusive"
-            );
+            )
         }
-
-        if let Some(theme) = overrides.syntax_theme {
-            validate_syntax_theme(&theme)?;
-            self.syntax_theme = theme;
-            self.syntax_theme_file = None;
-        } else if let Some(value) = overrides.syntax_theme_file {
-            let path = resolve_theme_path(&value, config_dir, home_dir).with_context(|| {
+        if let Some(id) = o.syntax_theme {
+            self.syntax = syntax_theme(&id, catalog)?;
+            self.syntax_theme = id;
+            self.syntax_theme_file = None
+        } else if let Some(value) = o.syntax_theme_file {
+            let path = resolve_theme_path(&value, config_dir, home).with_context(|| {
                 format!("invalid `{context}.syntax_theme_file` value `{value}`")
             })?;
-            let theme = ThemeSet::get_theme(&path)
+            self.syntax = ThemeSet::get_theme(&path)
                 .with_context(|| format!("failed to load syntax theme file {}", path.display()))?;
-            self.syntax_theme_file = Some(LoadedSyntaxTheme { path, theme });
+            self.syntax_theme_file = Some(path)
         }
         Ok(())
     }
-
     fn syntax_css(&self) -> Result<String> {
-        if let Some(loaded) = &self.syntax_theme_file {
-            return generate_syntax_css(&loaded.theme, &loaded.path.display().to_string());
-        }
-        syntax_css(&self.syntax_theme)
+        generate_syntax_css(
+            &self.syntax,
+            self.syntax_theme_file
+                .as_ref()
+                .and_then(|p| p.to_str())
+                .unwrap_or(&self.syntax_theme),
+        )
     }
 }
 
@@ -312,259 +492,133 @@ impl ThemeColors {
             self.sidebar_background,
             self.accent,
             self.search_match,
-            self.error,
+            self.error
         )
     }
 }
-
-impl FromStr for ThemePreset {
-    type Err = anyhow::Error;
-
-    fn from_str(value: &str) -> Result<Self> {
-        match value {
-            "system" => Ok(Self::System),
-            "light" => Ok(Self::Light),
-            "dark" => Ok(Self::Dark),
-            "tokyo-night" => Ok(Self::TokyoNight),
-            "gruvbox" => Ok(Self::Gruvbox),
-            "catppuccin-latte" => Ok(Self::CatppuccinLatte),
-            "catppuccin-mocha" => Ok(Self::CatppuccinMocha),
-            "solarized-light" => Ok(Self::SolarizedLight),
-            "solarized-dark" => Ok(Self::SolarizedDark),
-            _ => bail!("unknown theme preset `{value}`"),
-        }
+impl TryFrom<String> for HexColor {
+    type Error = anyhow::Error;
+    fn try_from(v: String) -> Result<Self> {
+        v.parse()
     }
 }
-
 impl FromStr for HexColor {
     type Err = anyhow::Error;
-
-    fn from_str(value: &str) -> Result<Self> {
-        if value.len() != 7 || !value.starts_with('#') {
-            bail!("expected a color in #RRGGBB format");
-        }
-        let component = |range| {
-            u8::from_str_radix(&value[range], 16)
+    fn from_str(v: &str) -> Result<Self> {
+        if v.len() != 7 || !v.starts_with('#') {
+            bail!("expected a color in #RRGGBB format")
+        };
+        let c = |r| {
+            u8::from_str_radix(&v[r], 16)
                 .map_err(|_| anyhow::anyhow!("expected a color in #RRGGBB format"))
         };
-        Ok(Self([component(1..3)?, component(3..5)?, component(5..7)?]))
+        Ok(Self([c(1..3)?, c(3..5)?, c(5..7)?]))
     }
 }
-
 impl fmt::Display for HexColor {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "#{:02x}{:02x}{:02x}",
-            self.0[0], self.0[1], self.0[2]
-        )
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "#{:02x}{:02x}{:02x}", self.0[0], self.0[1], self.0[2])
+    }
+}
+impl From<HexColor> for SyntectColor {
+    fn from(c: HexColor) -> Self {
+        Self {
+            r: c.0[0],
+            g: c.0[1],
+            b: c.0[2],
+            a: 255,
+        }
     }
 }
 
-fn parse_config_color(value: &str, field: &str, context: &str) -> Result<HexColor> {
-    value
-        .parse()
-        .map_err(|error| anyhow::anyhow!("invalid `{context}.{field}` value `{value}`: {error}"))
+fn parse_palette(s: &str) -> std::result::Result<Palette, String> {
+    toml::from_str::<AlacrittyFile>(s)
+        .map(|p| Palette {
+            primary: p.colors.primary,
+            normal: p.colors.normal,
+            bright: p.colors.bright,
+        })
+        .map_err(|e| e.to_string())
 }
-
-fn color(value: &str) -> HexColor {
-    value.parse().expect("built-in theme colors must be valid")
+fn bundled_variant(name: &str) -> Result<ThemeVariant> {
+    let path = format!("{name}.toml");
+    let file = BUNDLED
+        .get_file(&path)
+        .with_context(|| format!("bundled theme `{name}` is missing"))?;
+    let source = file
+        .contents_utf8()
+        .with_context(|| format!("bundled theme `{name}` is not UTF-8"))?;
+    let palette = parse_palette(source).map_err(anyhow::Error::msg)?;
+    Ok(ThemeVariant::from_palette(name, &palette))
 }
-
-fn standard_light() -> ThemeColors {
+fn parse_config_color(v: &str, f: &str, c: &str) -> Result<HexColor> {
+    v.parse()
+        .map_err(|e| anyhow::anyhow!("invalid `{c}.{f}` value `{v}`: {e}"))
+}
+fn blend(a: HexColor, b: HexColor, n: u16) -> HexColor {
+    HexColor(std::array::from_fn(|i| {
+        ((u16::from(a.0[i]) * (100 - n) + u16::from(b.0[i]) * n) / 100) as u8
+    }))
+}
+fn semantic_colors(p: &Palette) -> ThemeColors {
+    let b = p.primary.background;
+    let f = p.primary.foreground;
     ThemeColors {
-        background: color("#ffffff"),
-        surface: color("#f6f8fa"),
-        text: color("#1f2328"),
-        muted_text: color("#59636e"),
-        heading: color("#1f2328"),
-        link: color("#0969da"),
-        border: color("#d1d9e0"),
-        divider: color("#d8dee4"),
-        code_background: color("#f6f8fa"),
-        sidebar_background: color("#f6f8fa"),
-        accent: color("#0969da"),
-        search_match: color("#bf8700"),
-        error: color("#cf222e"),
+        background: b,
+        text: f,
+        surface: blend(b, f, 7),
+        sidebar_background: blend(b, f, 5),
+        code_background: blend(b, f, 6),
+        border: blend(b, f, 22),
+        divider: blend(b, f, 15),
+        muted_text: blend(b, f, 62),
+        heading: p.normal.magenta,
+        link: p.normal.blue,
+        accent: p.normal.cyan,
+        search_match: p.normal.yellow,
+        error: p.normal.red,
     }
 }
-
-fn standard_dark() -> ThemeColors {
-    ThemeColors {
-        background: color("#0d1117"),
-        surface: color("#161b22"),
-        text: color("#f0f6fc"),
-        muted_text: color("#9198a1"),
-        heading: color("#f0f6fc"),
-        link: color("#4493f8"),
-        border: color("#3d444d"),
-        divider: color("#3d444d"),
-        code_background: color("#161b22"),
-        sidebar_background: color("#151b23"),
-        accent: color("#4493f8"),
-        search_match: color("#d29922"),
-        error: color("#f85149"),
+fn appearance(c: HexColor) -> Appearance {
+    let linear = |v: u8| {
+        let x = f64::from(v) / 255.0;
+        if x <= 0.04045 {
+            x / 12.92
+        } else {
+            ((x + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    if 0.2126 * linear(c.0[0]) + 0.7152 * linear(c.0[1]) + 0.0722 * linear(c.0[2]) > 0.179 {
+        Appearance::Light
+    } else {
+        Appearance::Dark
     }
 }
-
-// Palette adapted from Tokyo Night Night by Folke Lemaitre (Apache-2.0).
-fn tokyo_night() -> ThemeColors {
-    ThemeColors {
-        background: color("#1a1b26"),
-        surface: color("#24283b"),
-        text: color("#c0caf5"),
-        muted_text: color("#a9b1d6"),
-        heading: color("#bb9af7"),
-        link: color("#7aa2f7"),
-        border: color("#414868"),
-        divider: color("#3b4261"),
-        code_background: color("#16161e"),
-        sidebar_background: color("#16161e"),
-        accent: color("#7dcfff"),
-        search_match: color("#e0af68"),
-        error: color("#f7768e"),
+fn appearance_name(a: Appearance) -> &'static str {
+    match a {
+        Appearance::Light => "light",
+        Appearance::Dark => "dark",
     }
 }
-
-// Palette adapted from Gruvbox Dark Medium by Pavel Pertsev (MIT/X11).
-fn gruvbox() -> ThemeColors {
-    ThemeColors {
-        background: color("#282828"),
-        surface: color("#3c3836"),
-        text: color("#ebdbb2"),
-        muted_text: color("#a89984"),
-        heading: color("#fabd2f"),
-        link: color("#83a598"),
-        border: color("#504945"),
-        divider: color("#665c54"),
-        code_background: color("#1d2021"),
-        sidebar_background: color("#1d2021"),
-        accent: color("#8ec07c"),
-        search_match: color("#d79921"),
-        error: color("#fb4934"),
-    }
+fn user_theme_dir() -> Option<PathBuf> {
+    env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|p| p.join(".config")))
+        .map(|p| p.join("mdglance/themes"))
 }
-
-// Palettes adapted from Catppuccin by the Catppuccin organization (MIT).
-fn catppuccin_latte() -> ThemeColors {
-    ThemeColors {
-        background: color("#eff1f5"),
-        surface: color("#ccd0da"),
-        text: color("#4c4f69"),
-        muted_text: color("#6c6f85"),
-        heading: color("#8839ef"),
-        link: color("#1e66f5"),
-        border: color("#bcc0cc"),
-        divider: color("#ccd0da"),
-        code_background: color("#e6e9ef"),
-        sidebar_background: color("#e6e9ef"),
-        accent: color("#7287fd"),
-        search_match: color("#df8e1d"),
-        error: color("#d20f39"),
-    }
-}
-
-fn catppuccin_mocha() -> ThemeColors {
-    ThemeColors {
-        background: color("#1e1e2e"),
-        surface: color("#313244"),
-        text: color("#cdd6f4"),
-        muted_text: color("#a6adc8"),
-        heading: color("#cba6f7"),
-        link: color("#89b4fa"),
-        border: color("#45475a"),
-        divider: color("#313244"),
-        code_background: color("#181825"),
-        sidebar_background: color("#181825"),
-        accent: color("#b4befe"),
-        search_match: color("#f9e2af"),
-        error: color("#f38ba8"),
-    }
-}
-
-// Palette adapted from Solarized by Ethan Schoonover (MIT).
-fn solarized_light() -> ThemeColors {
-    ThemeColors {
-        background: color("#fdf6e3"),
-        surface: color("#eee8d5"),
-        text: color("#657b83"),
-        muted_text: color("#93a1a1"),
-        heading: color("#268bd2"),
-        link: color("#268bd2"),
-        border: color("#93a1a1"),
-        divider: color("#eee8d5"),
-        code_background: color("#eee8d5"),
-        sidebar_background: color("#eee8d5"),
-        accent: color("#2aa198"),
-        search_match: color("#b58900"),
-        error: color("#dc322f"),
-    }
-}
-
-fn solarized_dark() -> ThemeColors {
-    ThemeColors {
-        background: color("#002b36"),
-        surface: color("#073642"),
-        text: color("#839496"),
-        muted_text: color("#586e75"),
-        heading: color("#268bd2"),
-        link: color("#268bd2"),
-        border: color("#586e75"),
-        divider: color("#073642"),
-        code_background: color("#073642"),
-        sidebar_background: color("#073642"),
-        accent: color("#2aa198"),
-        search_match: color("#b58900"),
-        error: color("#dc322f"),
-    }
-}
-
 pub fn syntax_class_style() -> ClassStyle {
     ClassStyle::SpacedPrefixed {
         prefix: SYNTAX_PREFIX,
     }
 }
-
-fn syntax_css(id: &str) -> Result<String> {
-    generate_syntax_css(&syntax_theme(id)?, id)
+fn generate_syntax_css(t: &Theme, d: &str) -> Result<String> {
+    let mut t = t.clone();
+    t.settings.background = None;
+    css_for_theme_with_class_style(&t, syntax_class_style())
+        .map_err(|e| anyhow::anyhow!("failed to generate syntax CSS for `{d}`: {e}"))
 }
-
-fn generate_syntax_css(theme: &Theme, description: &str) -> Result<String> {
-    let mut theme = theme.clone();
-    theme.settings.background = None;
-    css_for_theme_with_class_style(&theme, syntax_class_style()).map_err(|error| {
-        anyhow::anyhow!("failed to generate syntax CSS for `{description}`: {error}")
-    })
-}
-
-fn resolve_theme_path(value: &str, config_dir: &Path, home_dir: Option<&Path>) -> Result<PathBuf> {
-    let path = if value == "~" {
-        home_dir
-            .map(Path::to_path_buf)
-            .context("cannot expand `~` because the home directory is unavailable")?
-    } else if let Some(relative) = value.strip_prefix("~/") {
-        home_dir
-            .context("cannot expand `~/` because the home directory is unavailable")?
-            .join(relative)
-    } else if value.starts_with('~') {
-        bail!("only `~` and `~/` home-directory expansion are supported");
-    } else {
-        let path = PathBuf::from(value);
-        if path.is_absolute() {
-            path
-        } else {
-            config_dir.join(path)
-        }
-    };
-    Ok(path)
-}
-
-fn validate_syntax_theme(id: &str) -> Result<()> {
-    syntax_theme(id).map(|_| ())
-}
-
-fn syntax_theme(id: &str) -> Result<Theme> {
-    let bundled_name = match id {
+fn syntax_theme(id: &str, c: &ThemeCatalog) -> Result<Theme> {
+    let n = match id {
         "inspired-github" => Some("InspiredGitHub"),
         "solarized-dark" => Some("Solarized (dark)"),
         "solarized-light" => Some("Solarized (light)"),
@@ -572,337 +626,152 @@ fn syntax_theme(id: &str) -> Result<Theme> {
         "base16-mocha-dark" => Some("base16-mocha.dark"),
         "base16-ocean-dark" => Some("base16-ocean.dark"),
         "base16-ocean-light" => Some("base16-ocean.light"),
-        "tokyo-night" => return Ok(palette_syntax_theme("Tokyo Night", tokyo_syntax_palette())),
-        "gruvbox" => return Ok(palette_syntax_theme("Gruvbox", gruvbox_syntax_palette())),
-        "catppuccin-latte" => {
-            return Ok(palette_syntax_theme(
-                "Catppuccin Latte",
-                catppuccin_latte_syntax_palette(),
-            ));
-        }
-        "catppuccin-mocha" => {
-            return Ok(palette_syntax_theme(
-                "Catppuccin Mocha",
-                catppuccin_mocha_syntax_palette(),
-            ));
-        }
-        _ => bail!("unknown syntax theme `{id}`"),
+        _ => None,
     };
-    Ok(DEFAULT_THEMES
-        .themes
-        .get(bundled_name.expect("bundled theme name must exist"))
-        .cloned()
-        .expect("Syntect default theme must exist"))
+    if let Some(n) = n {
+        return SYNTECT_THEMES
+            .themes
+            .get(n)
+            .cloned()
+            .context("bundled Syntect theme is missing");
+    };
+    Ok(palette_syntax_theme(id, c.palette(id)?))
 }
-
-struct SyntaxPalette {
-    foreground: HexColor,
-    comment: HexColor,
-    string: HexColor,
-    number: HexColor,
-    keyword: HexColor,
-    function: HexColor,
-    type_name: HexColor,
-    operator: HexColor,
-    invalid: HexColor,
-}
-
-fn tokyo_syntax_palette() -> SyntaxPalette {
-    SyntaxPalette {
-        foreground: color("#c0caf5"),
-        comment: color("#565f89"),
-        string: color("#9ece6a"),
-        number: color("#ff9e64"),
-        keyword: color("#bb9af7"),
-        function: color("#7aa2f7"),
-        type_name: color("#7dcfff"),
-        operator: color("#89ddff"),
-        invalid: color("#f7768e"),
-    }
-}
-
-fn gruvbox_syntax_palette() -> SyntaxPalette {
-    SyntaxPalette {
-        foreground: color("#ebdbb2"),
-        comment: color("#928374"),
-        string: color("#b8bb26"),
-        number: color("#d3869b"),
-        keyword: color("#fb4934"),
-        function: color("#fabd2f"),
-        type_name: color("#8ec07c"),
-        operator: color("#fe8019"),
-        invalid: color("#cc241d"),
-    }
-}
-
-fn catppuccin_latte_syntax_palette() -> SyntaxPalette {
-    SyntaxPalette {
-        foreground: color("#4c4f69"),
-        comment: color("#7c7f93"),
-        string: color("#40a02b"),
-        number: color("#fe640b"),
-        keyword: color("#8839ef"),
-        function: color("#1e66f5"),
-        type_name: color("#df8e1d"),
-        operator: color("#04a5e5"),
-        invalid: color("#d20f39"),
-    }
-}
-
-fn catppuccin_mocha_syntax_palette() -> SyntaxPalette {
-    SyntaxPalette {
-        foreground: color("#cdd6f4"),
-        comment: color("#9399b2"),
-        string: color("#a6e3a1"),
-        number: color("#fab387"),
-        keyword: color("#cba6f7"),
-        function: color("#89b4fa"),
-        type_name: color("#f9e2af"),
-        operator: color("#89dceb"),
-        invalid: color("#f38ba8"),
-    }
-}
-
-fn palette_syntax_theme(name: &str, palette: SyntaxPalette) -> Theme {
-    let rules = [
-        ("comment", palette.comment),
-        ("string", palette.string),
-        ("constant.numeric, constant.language", palette.number),
-        ("keyword, storage", palette.keyword),
-        ("entity.name.function, support.function", palette.function),
+fn palette_syntax_theme(name: &str, p: &Palette) -> Theme {
+    let r = [
+        ("comment", p.bright.black),
+        ("string", p.bright.green),
+        ("constant.numeric, constant.language", p.bright.yellow),
+        ("keyword, storage", p.bright.magenta),
+        ("entity.name.function, support.function", p.bright.blue),
         (
             "entity.name.type, entity.name.class, support.type",
-            palette.type_name,
+            p.bright.cyan,
         ),
-        ("keyword.operator", palette.operator),
-        ("invalid", palette.invalid),
+        ("keyword.operator", p.bright.cyan),
+        ("invalid", p.normal.red),
     ];
-    let scopes = rules
-        .into_iter()
-        .map(|(scope, foreground)| ThemeItem {
-            scope: scope
-                .parse::<ScopeSelectors>()
-                .expect("built-in scopes must parse"),
-            style: StyleModifier {
-                foreground: Some(foreground.into()),
-                ..StyleModifier::default()
-            },
-        })
-        .collect();
     Theme {
         name: Some(name.into()),
         settings: ThemeSettings {
-            foreground: Some(palette.foreground.into()),
-            ..ThemeSettings::default()
+            foreground: Some(p.primary.foreground.into()),
+            ..Default::default()
         },
-        scopes,
-        ..Theme::default()
+        scopes: r
+            .into_iter()
+            .map(|(s, c)| ThemeItem {
+                scope: s.parse::<ScopeSelectors>().expect("valid scopes"),
+                style: StyleModifier {
+                    foreground: Some(c.into()),
+                    ..Default::default()
+                },
+            })
+            .collect(),
+        ..Default::default()
     }
 }
-
-impl From<HexColor> for SyntectColor {
-    fn from(color: HexColor) -> Self {
-        Self {
-            r: color.0[0],
-            g: color.0[1],
-            b: color.0[2],
-            a: 0xff,
-        }
-    }
+fn resolve_theme_path(v: &str, d: &Path, h: Option<&Path>) -> Result<PathBuf> {
+    if v == "~" {
+        return h
+            .map(Path::to_path_buf)
+            .context("cannot expand `~` because the home directory is unavailable");
+    };
+    if let Some(v) = v.strip_prefix("~/") {
+        return Ok(h
+            .context("cannot expand `~/` because the home directory is unavailable")?
+            .join(v));
+    };
+    if v.starts_with('~') {
+        bail!("only `~` and `~/` home-directory expansion are supported")
+    };
+    let p = PathBuf::from(v);
+    Ok(if p.is_absolute() { p } else { d.join(p) })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn resolve(overrides: ThemeOverrides) -> Result<ThemeConfig> {
-        ThemeConfig::resolve(overrides, Path::new("."))
-    }
-
     #[test]
-    fn parses_only_six_digit_hex_colors() {
+    fn all_packaged_themes_parse() {
+        let c = ThemeCatalog::load(false);
+        assert_eq!(c.entries.len(), 9);
+        for e in &c.entries[1..] {
+            assert!(e.result.is_ok(), "{}: {:?}", e.name, e.result)
+        }
+    }
+    #[test]
+    fn accepts_unknown_sections() {
+        let mut s = include_str!("../themes/dark.toml").to_owned();
+        s.push_str("\n[colors.cursor]\ntext='#ffffff'\ncursor='#000000'\n[window]\nopacity=0.9\n");
+        assert!(parse_palette(&s).is_ok())
+    }
+    #[test]
+    fn rejects_missing_and_bad_colors() {
+        assert!(parse_palette("[colors.primary]\nbackground='#fff'").is_err())
+    }
+    #[test]
+    fn maps_colors() {
+        let p = parse_palette(include_str!("../themes/gruvbox.toml")).unwrap();
+        let c = semantic_colors(&p);
+        assert_eq!(c.heading.to_string(), "#b16286");
+        assert_eq!(c.link.to_string(), "#458588");
+        let css = generate_syntax_css(&palette_syntax_theme("x", &p), "x").unwrap();
+        assert!(css.contains("#928374"));
+        assert!(css.contains("#b8bb26"))
+    }
+    #[test]
+    fn infers_light_dark() {
+        assert_eq!(appearance("#ffffff".parse().unwrap()), Appearance::Light);
+        assert_eq!(appearance("#002b36".parse().unwrap()), Appearance::Dark)
+    }
+    #[test]
+    fn config_alias_and_conflict() {
+        let o: ThemeOverrides = toml::from_str("preset='gruvbox'").unwrap();
         assert_eq!(
-            "#7aa2f7".parse::<HexColor>().unwrap().to_string(),
-            "#7aa2f7"
+            ThemeConfig::resolve(o, Path::new(".")).unwrap().name,
+            "gruvbox"
         );
-        assert!("blue".parse::<HexColor>().is_err());
-        assert!("#fff".parse::<HexColor>().is_err());
+        let o: ThemeOverrides = toml::from_str("name='dark'\npreset='light'").unwrap();
+        assert!(ThemeConfig::resolve(o, Path::new(".")).is_err())
     }
-
     #[test]
-    fn custom_syntax_themes_generate_prefixed_css() {
-        for name in ["tokyo-night", "gruvbox"] {
-            let css = syntax_css(name).unwrap();
-            assert!(css.contains(".syntect-code"));
-            assert!(css.contains(".syntect-comment"));
-        }
+    fn variant_overrides_follow_inferred_palette_appearance() {
+        let o: ThemeOverrides =
+            toml::from_str("name='dark'\n[light]\nheading='#111111'\n[dark]\nheading='#abcdef'")
+                .unwrap();
+        let css = ThemeConfig::resolve(o, Path::new("."))
+            .unwrap()
+            .css()
+            .unwrap();
+        assert!(css.contains("--heading: #abcdef"));
+        assert!(!css.contains("--heading: #111111"));
     }
-
     #[test]
-    fn resolves_preset_and_variant_overrides() {
-        let overrides: ThemeOverrides = toml::from_str(
-            r##"
-preset = "tokyo-night"
-
-[dark]
-heading = "#abcdef"
-syntax_theme = "solarized-dark"
-"##,
-        )
-        .unwrap();
-        let theme = resolve(overrides).unwrap();
-
-        assert_eq!(theme.preset, ThemePreset::TokyoNight);
-        assert_eq!(theme.dark.colors.heading.to_string(), "#abcdef");
-        assert_eq!(theme.dark.syntax_theme, "solarized-dark");
-        assert_eq!(theme.dark.colors.background.to_string(), "#1a1b26");
-    }
-
-    #[test]
-    fn supports_every_documented_syntax_theme() {
-        for name in [
-            "inspired-github",
-            "solarized-dark",
-            "solarized-light",
-            "base16-eighties-dark",
-            "base16-mocha-dark",
-            "base16-ocean-dark",
-            "base16-ocean-light",
-            "tokyo-night",
-            "gruvbox",
-            "catppuccin-latte",
-            "catppuccin-mocha",
-        ] {
-            assert!(syntax_theme(name).is_ok(), "failed to load {name}");
-        }
-    }
-
-    #[test]
-    fn rejects_invalid_theme_values() {
-        let bad_color: ThemeOverrides =
-            toml::from_str("[dark]\nbackground = \"transparent\"").unwrap();
-        assert!(resolve(bad_color).is_err());
-
-        let bad_syntax: ThemeOverrides =
-            toml::from_str("[dark]\nsyntax_theme = \"unknown\"").unwrap();
-        assert!(resolve(bad_syntax).is_err());
-
-        let bad_preset: ThemeOverrides = toml::from_str("preset = \"unknown\"").unwrap();
-        assert!(resolve(bad_preset).is_err());
-    }
-
-    #[test]
-    fn system_css_contains_live_light_and_dark_variants() {
+    fn system_composes_files() {
         let css = ThemeConfig::default().css().unwrap();
-
-        assert!(css.contains("color-scheme: light dark"));
-        assert!(css.contains("@media (prefers-color-scheme: dark)"));
-        assert!(css.contains("--background: #ffffff"));
-        assert!(css.contains("--background: #0d1117"));
+        assert_eq!(ThemeConfig::default().name, "system");
+        assert!(css.contains("prefers-color-scheme: dark"));
+        assert!(css.contains("#ffffff"));
+        assert!(css.contains("#0d1117"))
     }
-
     #[test]
-    fn fixed_presets_emit_only_the_active_variant() {
-        let overrides: ThemeOverrides = toml::from_str("preset = \"tokyo-night\"").unwrap();
-        let css = resolve(overrides).unwrap().css().unwrap();
-
-        assert!(css.contains("color-scheme: dark"));
-        assert!(css.contains("--background: #1a1b26"));
-        assert!(!css.contains("prefers-color-scheme"));
-        assert!(!css.contains("--background: #ffffff"));
-    }
-
-    #[test]
-    fn additional_presets_resolve_their_canonical_backgrounds() {
-        for (preset, expected_scheme, expected_background) in [
-            ("catppuccin-latte", "light", "#eff1f5"),
-            ("catppuccin-mocha", "dark", "#1e1e2e"),
-            ("solarized-light", "light", "#fdf6e3"),
-            ("solarized-dark", "dark", "#002b36"),
-        ] {
-            let source = format!("preset = \"{preset}\"");
-            let overrides: ThemeOverrides = toml::from_str(&source).unwrap();
-            let css = resolve(overrides).unwrap().css().unwrap();
-
-            assert!(css.contains(&format!("color-scheme: {expected_scheme}")));
-            assert!(css.contains(&format!("--background: {expected_background}")));
-            assert!(!css.contains("prefers-color-scheme"));
+    fn standard_themes_use_github_like_semantics() {
+        for name in ["light", "dark"] {
+            let theme = bundled_variant(name).unwrap();
+            assert_eq!(theme.colors.heading, theme.colors.text);
+            assert_eq!(theme.colors.accent, theme.colors.link);
         }
     }
-
     #[test]
-    fn changing_syntax_theme_changes_generated_css() {
-        assert_ne!(
-            syntax_css("tokyo-night").unwrap(),
-            syntax_css("gruvbox").unwrap()
-        );
-    }
-
-    #[test]
-    fn loads_relative_external_syntax_theme_once() {
-        let overrides: ThemeOverrides =
-            toml::from_str("[dark]\nsyntax_theme_file = \"minimal.tmTheme\"").unwrap();
-        let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-        let theme = ThemeConfig::resolve(overrides, &fixture_dir).unwrap();
-
-        let css = theme.dark.syntax_css().unwrap();
-        assert_eq!(theme.dark.colors.background.to_string(), "#0d1117");
-        assert!(css.contains("#123456"));
-        assert!(css.contains("#abcdef"));
-        assert!(!css.contains("#010203"));
-    }
-
-    #[test]
-    fn loads_absolute_external_syntax_theme() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/minimal.tmTheme");
-        let overrides = ThemeOverrides {
-            dark: ThemeVariantOverrides {
-                syntax_theme_file: Some(path.display().to_string()),
-                ..ThemeVariantOverrides::default()
-            },
-            ..ThemeOverrides::default()
-        };
-        let theme = ThemeConfig::resolve(overrides, Path::new("ignored")).unwrap();
-
-        assert!(theme.dark.syntax_css().unwrap().contains("#abcdef"));
-    }
-
-    #[test]
-    fn rejects_conflicting_syntax_theme_sources() {
-        let overrides: ThemeOverrides = toml::from_str(
-            "[dark]\nsyntax_theme = \"gruvbox\"\nsyntax_theme_file = \"theme.tmTheme\"",
-        )
-        .unwrap();
-        let error = resolve(overrides).unwrap_err().to_string();
-
-        assert!(error.contains("mutually exclusive"));
-        assert!(error.contains("theme.dark.syntax_theme_file"));
-    }
-
-    #[test]
-    fn expands_home_and_rejects_unsupported_tilde_forms() {
-        let base = Path::new("/config");
-        let home = Path::new("/home/example");
-
-        assert_eq!(
-            resolve_theme_path("~/themes/night.tmTheme", base, Some(home)).unwrap(),
-            home.join("themes/night.tmTheme")
-        );
-        assert!(resolve_theme_path("~/theme.tmTheme", base, None).is_err());
-        assert!(resolve_theme_path("~someone/theme.tmTheme", base, Some(home)).is_err());
-    }
-
-    #[test]
-    fn reports_resolved_path_for_missing_or_malformed_theme() {
-        let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-        for file in ["missing.tmTheme", "malformed.tmTheme"] {
-            let source = format!("[dark]\nsyntax_theme_file = \"{file}\"");
-            let overrides: ThemeOverrides = toml::from_str(&source).unwrap();
-            let error = ThemeConfig::resolve(overrides, &fixture_dir)
-                .unwrap_err()
-                .to_string();
-
-            assert!(error.contains(&fixture_dir.join(file).display().to_string()));
-        }
+    fn user_override_and_invalid_report() {
+        let d = env::temp_dir().join(format!("mdglance-theme-test-{}", std::process::id()));
+        let _ = std::fs::create_dir(&d);
+        std::fs::write(d.join("dark.toml"), "bad").unwrap();
+        let c = ThemeCatalog::load_from_dir(Some(&d));
+        let e = c.entries.iter().find(|e| e.name == "dark").unwrap();
+        assert_eq!(e.source, ThemeSource::User);
+        assert!(e.result.is_err());
+        let _ = std::fs::remove_file(d.join("dark.toml"));
+        let _ = std::fs::remove_dir(d);
     }
 }

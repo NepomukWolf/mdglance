@@ -64,6 +64,7 @@ for trusted workspaces.
 | `[` / `]` | Previous / next queued file |
 | `+` / `-` / `0` | Zoom in / out / reset SVG view |
 | `T` | Open workspace trust controls while restricted |
+| `p` | Open the live, session-only theme picker |
 | `?`, `Esc`, `q` | Help, close overlay, quit |
 
 Shortcuts can be replaced in the configuration file.
@@ -88,16 +89,24 @@ width = 1280
 height = 900
 
 [theme]
-preset = "system"
+name = "system"
 
 [keybindings]
 quit = ["q"]
 ```
 
+`system` is the default and follows the OS light/dark appearance using GitHub-like packaged
+palettes. The selected palette normally drives both Markdown styling and generated syntax
+highlighting; either syntax variant can be overridden independently. See the configuration
+reference for the mapping and override options.
+
 Project configuration is used only after its workspace has been trusted. For every option, accepted
 value, default keybinding, and theme name, see the [complete configuration
 reference](docs/configuration.md). A commented [example configuration](mdglance.example.toml) is
 available as a copyable starting point.
+
+Additional Alacritty-compatible themes can be placed in `$XDG_CONFIG_HOME/mdglance/themes` (or
+`~/.config/mdglance/themes`). User themes override bundled files with the same filename stem.
 
 On macOS, option-click the green window button to use Zoom instead of borderless fullscreen.
 

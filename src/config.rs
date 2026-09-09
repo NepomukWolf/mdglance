@@ -17,6 +17,7 @@ const SCOPE_SEARCH: u8 = 1 << 2;
 const SCOPE_TOC: u8 = 1 << 3;
 const SCOPE_HELP: u8 = 1 << 4;
 const SCOPE_SVG: u8 = 1 << 5;
+const SCOPE_THEME: u8 = 1 << 6;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -78,6 +79,7 @@ pub enum Action {
     ZoomOut,
     ResetView,
     ManageTrust,
+    OpenThemePicker,
     Quit,
 }
 
@@ -351,6 +353,7 @@ impl Action {
             Action::ZoomOut,
             Action::ResetView,
             Action::ManageTrust,
+            Action::OpenThemePicker,
             Action::Quit,
         ]
     }
@@ -386,6 +389,7 @@ impl Action {
             "zoom_out" => Action::ZoomOut,
             "reset_view" => Action::ResetView,
             "manage_trust" => Action::ManageTrust,
+            "open_theme_picker" => Action::OpenThemePicker,
             "quit" => Action::Quit,
             _ => return None,
         })
@@ -422,6 +426,7 @@ impl Action {
             Action::ZoomOut => "zoom_out",
             Action::ResetView => "reset_view",
             Action::ManageTrust => "manage_trust",
+            Action::OpenThemePicker => "open_theme_picker",
             Action::Quit => "quit",
         }
     }
@@ -431,8 +436,17 @@ impl Action {
             Action::Quit | Action::ShowHelp | Action::ToggleToc | Action::ManageTrust => {
                 SCOPE_GLOBAL
             }
+            Action::OpenThemePicker => {
+                SCOPE_GLOBAL
+                    | SCOPE_DOCUMENT
+                    | SCOPE_SEARCH
+                    | SCOPE_TOC
+                    | SCOPE_HELP
+                    | SCOPE_SVG
+                    | SCOPE_THEME
+            }
             Action::ToggleFocus => SCOPE_DOCUMENT | SCOPE_TOC,
-            Action::CloseOverlay => SCOPE_SEARCH | SCOPE_HELP,
+            Action::CloseOverlay => SCOPE_SEARCH | SCOPE_HELP | SCOPE_THEME,
             Action::AcceptSearch => SCOPE_SEARCH,
             Action::TocDown | Action::TocUp | Action::ActivateSelection => SCOPE_TOC,
             Action::ScrollDown | Action::ScrollUp => SCOPE_DOCUMENT | SCOPE_SVG,
@@ -517,6 +531,7 @@ fn default_keybindings() -> Vec<(Action, Vec<&'static str>)> {
         (Action::ZoomOut, vec!["-"]),
         (Action::ResetView, vec!["0"]),
         (Action::ManageTrust, vec!["Shift+T"]),
+        (Action::OpenThemePicker, vec!["p"]),
         (Action::Quit, default_quit_bindings()),
     ]
 }
@@ -751,6 +766,15 @@ mod tests {
     }
 
     #[test]
+    fn theme_picker_binding_conflicts_with_actions_in_every_scope() {
+        let error = config_from_toml("[keybindings]\nopen_theme_picker=['j']")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("scroll_down"));
+        assert!(error.contains("open_theme_picker"));
+    }
+
+    #[test]
     fn loads_theme_configuration_with_other_settings() {
         let config = config_from_toml(
             r##"
@@ -768,7 +792,7 @@ syntax_theme = "solarized-dark"
         .unwrap();
 
         assert_eq!(config.window.width, 1200);
-        assert_eq!(config.theme.preset, crate::theme::ThemePreset::Gruvbox);
+        assert_eq!(config.theme.name, "gruvbox");
         assert_eq!(config.theme.dark.colors.link.to_string(), "#abcdef");
         assert_eq!(config.theme.dark.syntax_theme, "solarized-dark");
     }

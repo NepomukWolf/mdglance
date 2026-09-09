@@ -386,6 +386,35 @@ svg {
   background: color-mix(in srgb, var(--text) 34%, transparent);
 }
 
+.theme-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--text) 34%, transparent);
+}
+
+.theme-dialog {
+  width: min(620px, 100%);
+  padding: 22px 24px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--background);
+  box-shadow: 0 20px 50px color-mix(in srgb, var(--text) 28%, transparent);
+}
+
+.theme-dialog h2 { margin-top: 0; }
+.theme-list { max-height: min(55vh, 460px); overflow: auto; outline: none; }
+.theme-row { display: flex; width: 100%; justify-content: space-between; gap: 16px; padding: 9px 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.theme-row small { color: var(--muted-text); }
+.theme-row.selected { border-color: var(--accent); background: var(--surface); }
+.theme-row:disabled { cursor: not-allowed; opacity: .62; }
+.theme-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.theme-actions button { padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
+.theme-error { color: var(--error); }
+
 .trust-dialog {
   width: min(640px, 100%);
   padding: 24px;

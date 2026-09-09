@@ -67,6 +67,13 @@ PlantUML remains disabled unless `[diagrams].plantuml` is explicitly enabled in 
 the `plantuml` executable is available on `PATH`. Trust by itself never opts into local process
 execution.
 
+## Theme files
+
+Themes in the user configuration directory are local color data, not executable content. mdglance
+parses their Alacritty color tables in Rust and generates fixed CSS properties; unrelated valid
+Alacritty settings are ignored. Malformed themes are reported and cannot inject HTML, JavaScript,
+or arbitrary CSS.
+
 ## Trust storage and revocation
 
 Trust records are individual TOML files under the platform application-data directory:

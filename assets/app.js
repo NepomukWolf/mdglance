@@ -27,6 +27,12 @@ const trustError = document.getElementById("trust-error");
 const trustFolderButton = document.getElementById("trust-folder");
 const openRestrictedButton = document.getElementById("open-restricted");
 const closeTrustButton = document.getElementById("close-trust");
+const themeStyle = document.getElementById("theme-style");
+const themeOverlay = document.getElementById("theme-overlay");
+const themeList = document.getElementById("theme-list");
+const themeError = document.getElementById("theme-error");
+const applyThemeButton = document.getElementById("apply-theme");
+const cancelThemeButton = document.getElementById("cancel-theme");
 const linkHintsLayer = document.createElement("div");
 linkHintsLayer.className = "link-hints hidden";
 document.body.append(linkHintsLayer);
@@ -49,6 +55,7 @@ const state = {
   linkHintMode: false,
   linkHintQuery: "",
   linkHints: [],
+  themePicker: { entries: [], index: -1, originalCss: "", active: null, open: false },
   svg: {
     viewport: null,
     stage: null,
@@ -93,6 +100,7 @@ const ACTIONS = [
   { id: "zoom_out", description: "SVG: zoom out" },
   { id: "reset_view", description: "SVG: reset view" },
   { id: "manage_trust", description: "Open workspace trust controls" },
+  { id: "open_theme_picker", description: "Choose a theme for this session" },
   { id: "quit", description: "Quit" },
 ];
 
@@ -107,6 +115,7 @@ const GLOBAL_ACTIONS = new Set([
   "toggle_toc",
   "close_overlay",
   "manage_trust",
+  "open_theme_picker",
 ]);
 const SEARCH_ACTIONS = new Set(["accept_search", "close_overlay", "quit"]);
 const DOCUMENT_ACTIONS = new Set([
@@ -507,6 +516,101 @@ window.__mdglanceShowTrustError = function (message) {
 
 function sendIpc(message) {
   window.ipc.postMessage(JSON.stringify(message));
+}
+
+function renderThemeList() {
+  const rows = state.themePicker.entries.map((entry, index) => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "theme-row";
+    row.setAttribute("role", "option");
+    row.dataset.index = String(index);
+    row.disabled = Boolean(entry.error);
+    row.classList.toggle("selected", index === state.themePicker.index);
+    row.setAttribute("aria-selected", index === state.themePicker.index ? "true" : "false");
+    const label = document.createElement("span");
+    label.textContent = `${entry.name}${entry.active ? "  • active" : ""}`;
+    const source = document.createElement("small");
+    source.textContent = entry.error ? `Invalid — ${entry.error}` : entry.source;
+    row.append(label, source);
+    row.addEventListener("click", () => selectTheme(index, true));
+    return row;
+  });
+  themeList.replaceChildren(...rows);
+}
+
+function selectTheme(index, preview) {
+  const entry = state.themePicker.entries[index];
+  if (!entry || entry.error) return;
+  state.themePicker.index = index;
+  themeError.classList.add("hidden");
+  renderThemeList();
+  themeList.querySelector(`[data-index="${index}"]`)?.scrollIntoView({ block: "nearest" });
+  if (preview) sendIpc({ type: "preview_theme", name: entry.name });
+}
+
+function moveThemeSelection(delta) {
+  if (!state.themePicker.entries.length) return;
+  let index = state.themePicker.index;
+  for (let count = 0; count < state.themePicker.entries.length; count += 1) {
+    index = (index + delta + state.themePicker.entries.length) % state.themePicker.entries.length;
+    if (!state.themePicker.entries[index].error) { selectTheme(index, true); return; }
+  }
+}
+
+function closeThemePicker(commit) {
+  state.themePicker.open = false;
+  if (!commit) themeStyle.textContent = state.themePicker.originalCss;
+  themeOverlay.classList.add("hidden");
+  content.focus();
+}
+
+function commitTheme() {
+  const entry = state.themePicker.entries[state.themePicker.index];
+  if (!entry || entry.error) return;
+  state.themePicker.active = entry.name;
+  sendIpc({ type: "commit_theme", name: entry.name });
+  closeThemePicker(true);
+}
+
+window.__mdglanceThemeCatalog = function (payload) {
+  state.themePicker.entries = payload.entries;
+  state.themePicker.active = payload.active;
+  state.themePicker.originalCss = themeStyle.textContent;
+  state.themePicker.open = true;
+  state.themePicker.index = Math.max(0, payload.entries.findIndex((entry) => entry.name === payload.active && !entry.error));
+  renderThemeList();
+  themeOverlay.classList.remove("hidden");
+  themeList.focus();
+};
+
+window.__mdglanceApplyTheme = function (payload) {
+  const selected = state.themePicker.entries[state.themePicker.index];
+  if (payload.committed || (state.themePicker.open && selected?.name === payload.name)) {
+    themeStyle.textContent = payload.css;
+  }
+};
+
+applyThemeButton.addEventListener("click", commitTheme);
+cancelThemeButton.addEventListener("click", () => closeThemePicker(false));
+themeList.addEventListener("keydown", (event) => {
+  if (event.key === "j" || event.key === "ArrowDown") moveThemeSelection(1);
+  else if (event.key === "k" || event.key === "ArrowUp") moveThemeSelection(-1);
+  else if (event.key === "Home") selectTheme(state.themePicker.entries.findIndex((e) => !e.error), true);
+  else if (event.key === "End") selectTheme(state.themePicker.entries.findLastIndex((e) => !e.error), true);
+  else if (event.key === "Enter") commitTheme();
+  else if (event.key === "Escape") closeThemePicker(false);
+  else if (event.key === "Tab") (event.shiftKey ? cancelThemeButton : applyThemeButton).focus();
+  else return;
+  event.preventDefault();
+});
+for (const button of [applyThemeButton, cancelThemeButton]) {
+  button.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeThemePicker(false);
+    else if (event.key === "Tab") themeList.focus();
+    else return;
+    event.preventDefault();
+  });
 }
 
 function currentScrollRatio() {
@@ -987,6 +1091,9 @@ function performAction(action) {
         return true;
       }
       return false;
+    case "open_theme_picker":
+      sendIpc({ type: "open_theme_picker" });
+      return true;
     case "half_page_down":
       if (helpOpen) {
         return helpScroll(page / 2);
@@ -1120,6 +1227,7 @@ searchInput.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("keydown", (event) => {
+  if (!themeOverlay.classList.contains("hidden")) return;
   if (!trustOverlay.classList.contains("hidden")) {
     return;
   }
