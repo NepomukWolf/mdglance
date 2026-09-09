@@ -88,7 +88,8 @@ jobs:
           archive="mdglance-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz"
           staging="$(mktemp -d)"
           mkdir "$staging/mdglance-${GITHUB_REF_NAME}"
-          cp "$binary" README.md LICENSE THIRD_PARTY_NOTICES.md "$staging/mdglance-${GITHUB_REF_NAME}/"
+          cp "$binary" README.md LICENSE THIRD_PARTY_NOTICES.md mdglance.example.toml "$staging/mdglance-${GITHUB_REF_NAME}/"
+          cp -R docs "$staging/mdglance-${GITHUB_REF_NAME}/docs"
           tar -C "$staging" -czf "$archive" "mdglance-${GITHUB_REF_NAME}"
 
       - name: Upload release archive

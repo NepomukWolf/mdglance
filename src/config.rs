@@ -743,6 +743,14 @@ mod tests {
     }
 
     #[test]
+    fn documented_example_config_is_valid() {
+        let config = config_from_toml(include_str!("../mdglance.example.toml")).unwrap();
+        assert_eq!(config.window.width, 1080);
+        assert_eq!(config.toc.max_depth, 3);
+        assert!(!config.diagrams.plantuml);
+    }
+
+    #[test]
     fn loads_theme_configuration_with_other_settings() {
         let config = config_from_toml(
             r##"

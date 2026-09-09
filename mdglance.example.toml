@@ -1,0 +1,92 @@
+# Copy this file to either:
+#   ./mdglance.toml
+#   ~/.config/mdglance/config.toml
+#
+# A project file is applied only when it is inside a trusted workspace. Delete any values you do
+# not want to override.
+
+[window]
+width = 1080
+height = 860
+maximized = false
+fullscreen = false
+
+[toc]
+visible_on_start = false
+max_depth = 3
+
+[diagrams]
+# Also requires a trusted workspace and the `plantuml` executable on PATH.
+plantuml = false
+
+[theme]
+preset = "system"
+
+[theme.light]
+background = "#ffffff"
+surface = "#f6f8fa"
+text = "#1f2328"
+muted_text = "#59636e"
+heading = "#1f2328"
+link = "#0969da"
+border = "#d1d9e0"
+divider = "#d8dee4"
+code_background = "#f6f8fa"
+sidebar_background = "#f6f8fa"
+accent = "#0969da"
+search_match = "#bf8700"
+error = "#cf222e"
+syntax_theme = "inspired-github"
+# Use an external TextMate theme instead of `syntax_theme`:
+# syntax_theme_file = "themes/light.tmTheme"
+
+[theme.dark]
+background = "#0d1117"
+surface = "#161b22"
+text = "#f0f6fc"
+muted_text = "#9198a1"
+heading = "#f0f6fc"
+link = "#4493f8"
+border = "#3d444d"
+divider = "#3d444d"
+code_background = "#161b22"
+sidebar_background = "#151b23"
+accent = "#4493f8"
+search_match = "#d29922"
+error = "#f85149"
+syntax_theme = "base16-ocean-dark"
+# syntax_theme_file = "~/themes/dark.tmTheme"
+
+[keybindings]
+scroll_down = ["j"]
+scroll_up = ["k"]
+scroll_left = ["h"]
+scroll_right = ["l"]
+half_page_down = ["d"]
+half_page_up = ["u"]
+page_down = ["Space"]
+top = ["g"]
+bottom = ["Shift+G"]
+open_search = ["/"]
+accept_search = ["Enter"]
+next_search_hit = ["n"]
+previous_search_hit = ["Shift+N"]
+show_help = ["?"]
+close_overlay = ["Escape"]
+toggle_toc = ["t"]
+toggle_focus = ["Tab"]
+back = ["h"]
+forward = ["l"]
+previous_file = ["["]
+next_file = ["]"]
+open_link_hints = ["f"]
+toc_down = ["j"]
+toc_up = ["k"]
+activate_selection = ["Enter"]
+zoom_in = ["=", "Shift+="]
+zoom_out = ["-"]
+reset_view = ["0"]
+manage_trust = ["Shift+T"]
+
+# macOS defaults; on other platforms the default is just ["q"].
+quit = ["q", "Cmd+W", "Cmd+Q"]

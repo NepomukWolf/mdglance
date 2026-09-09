@@ -47,12 +47,8 @@ fd -e md -e svg | cargo run --
 Use `[` and `]` to move through the queue.
 
 Mermaid is bundled and works offline. PlantUML rendering is disabled by default because it invokes
-a local executable. To enable it for trusted workspaces, install `plantuml` on `PATH` and add:
-
-```toml
-[diagrams]
-plantuml = true
-```
+a local executable. See the [configuration reference](docs/configuration.md#diagrams) to enable it
+for trusted workspaces.
 
 ## Keyboard shortcuts
 
@@ -74,7 +70,8 @@ Shortcuts can be replaced in the configuration file.
 
 ## Configuration
 
-Configuration is optional. `mdglance` checks, in order:
+Configuration is optional. It can control the window, table of contents, themes, diagram rendering,
+and every keyboard binding. `mdglance` checks, in order:
 
 1. `mdglance.toml` in the directory where it was launched
 2. `~/.config/mdglance/config.toml`
@@ -97,30 +94,21 @@ preset = "system"
 quit = ["q"]
 ```
 
-Built-in theme presets are `system`, `light`, `dark`, `tokyo-night`, `gruvbox`,
-`catppuccin-latte`, `catppuccin-mocha`, `solarized-light`, and `solarized-dark`. Semantic colors
-and syntax themes can also be overridden independently for light and dark appearances; see the
-configuration types and defaults in [`src/config.rs`](src/config.rs).
+Project configuration is used only after its workspace has been trusted. For every option, accepted
+value, default keybinding, and theme name, see the [complete configuration
+reference](docs/configuration.md). A commented [example configuration](mdglance.example.toml) is
+available as a copyable starting point.
 
 On macOS, option-click the green window button to use Zoom instead of borderless fullscreen.
 
 ## Security
 
-The first time `mdglance` opens a folder, it asks whether you trust it. A workspace is the nearest
-parent containing `.git`, or the file's parent folder when it is not in a Git repository. Choose
-**Open Restricted** to view the document safely without saving a decision, or **Trust Folder** to
-remember the folder and enable its active content.
+Unknown workspaces open with a trust prompt and can be viewed in restricted mode. Restricted mode
+keeps ordinary Markdown viewing available while disabling active content, unsolicited network
+requests, out-of-workspace image access, local process execution, and project configuration.
 
-Restricted mode keeps Markdown, syntax highlighting, search, navigation, the table of contents,
-and live reload available. It displays raw HTML and SVG as source, leaves Mermaid and PlantUML as
-code, blocks remote and out-of-workspace images, and ignores project configuration. A visible
-**Restricted** control opens the trust dialog with the mouse; press `T` to open it from the
-keyboard. HTTP(S) links open only after explicit activation.
-
-Trust records are stored as TOML files in the platform application-data directory under
-`mdglance/workspace-trust` (`~/Library/Application Support/mdglance/workspace-trust` on macOS and
-usually `~/.local/share/mdglance/workspace-trust` on Linux). To revoke trust, inspect the `path`
-inside the records and delete the record for that workspace. The next launch will ask again.
+See [Security and workspace trust](docs/security.md) for the precise boundary, trust storage,
+revocation instructions, and guidance on when to trust a folder.
 
 ## Development
 
