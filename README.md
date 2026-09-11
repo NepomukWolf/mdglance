@@ -22,7 +22,27 @@ the keyboard, so previewing does not require switching tools or reaching for the
 - Syntax highlighting and configurable light/dark themes
 - Local image support
 
-## Run from source
+## Installation
+
+Install `mdglance` with [Homebrew](https://github.com/NepomukWolf/homebrew-tap):
+
+```sh
+brew install NepomukWolf/tap/mdglance
+```
+
+Alternatively, install it from [crates.io](https://crates.io/crates/mdglance) with Cargo:
+
+```sh
+cargo install mdglance
+```
+
+Then preview a file with:
+
+```sh
+mdglance README.md
+```
+
+### Run from source
 
 You need a current Rust toolchain.
 
