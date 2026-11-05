@@ -17,7 +17,8 @@ the keyboard, so previewing does not require switching tools or reaching for the
 
 - Live, read-only Markdown and SVG preview
 - Keyboard navigation, search, table of contents, link hints, and Markdown history
-- File queues supplied as newline-separated paths on standard input
+- File queues supplied as extra command-line arguments or newline-separated paths on standard input
+- Open the current file in `$EDITOR`, in the same terminal, with one keypress
 - Offline Mermaid rendering and optional local PlantUML rendering
 - Syntax highlighting and configurable light/dark themes
 - Local image support
@@ -58,7 +59,13 @@ Pass `--detach` to return the shell prompt immediately:
 cargo run -- --detach README.md
 ```
 
-With no path argument, `mdglance` reads a newline-separated file queue from standard input:
+Pass multiple files to queue them up front:
+
+```sh
+cargo run -- README.md ROADMAP.md
+```
+
+With no path argument, `mdglance` reads a newline-separated file queue from standard input instead:
 
 ```sh
 fd -e md -e svg | cargo run --
@@ -85,9 +92,11 @@ for trusted workspaces.
 | `+` / `-` / `0` | Zoom in / out / reset SVG view |
 | `T` | Open workspace trust controls while restricted |
 | `p` | Open the live, session-only theme picker |
+| `e` | Open the current file in `$EDITOR`, in the same terminal |
 | `?`, `Esc`, `q` | Help, close overlay, quit |
 
-Shortcuts can be replaced in the configuration file.
+Shortcuts can be replaced in the configuration file. On macOS, Cmd+C and Cmd+A (copy and select all)
+are also available as fixed native shortcuts.
 
 ## Configuration
 
@@ -135,6 +144,8 @@ On macOS, option-click the green window button to use Zoom instead of borderless
 Unknown workspaces open with a trust prompt and can be viewed in restricted mode. Restricted mode
 keeps ordinary Markdown viewing available while disabling active content, unsolicited network
 requests, out-of-workspace image access, local process execution, and project configuration.
+Trusted mode enables richer rendering (raw HTML, remote images, Mermaid) but sanitizes that HTML and
+applies a Content Security Policy, so documents still cannot execute arbitrary JavaScript.
 
 See [Security and workspace trust](docs/security.md) for the precise boundary, trust storage,
 revocation instructions, and guidance on when to trust a folder.

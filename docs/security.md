@@ -63,9 +63,26 @@ Trusted mode enables raw HTML, direct and embedded SVG, Mermaid, remote images, 
 eligible project configuration. These features should be treated with the same care as opening the
 content in a browser.
 
+Raw and inline HTML is not passed through unmodified: it is sanitized with an allowlist (`<script>`,
+inline event handlers such as `onerror`/`onload`, `<iframe>`, `<object>`, and `<form>` are stripped;
+`javascript:` and other unrecognized URL schemes are removed from links and sources) before being
+added to the page. Formatting tags such as `<details>`, tables, and basic inline markup pass through
+unchanged. A Content Security Policy backs this up: scripts are limited to the exact, hashed content
+of mdglance's own bundled scripts (no `'unsafe-inline'`), and `object-src`, `frame-src`, and
+`form-action` are all disabled. This means a compromised or malicious file in a trusted workspace
+cannot execute arbitrary JavaScript, even though its raw HTML is rendered. See
+[`examples/security-sanitization-check.md`](../examples/security-sanitization-check.md) for a file
+that exercises this directly.
+
 PlantUML remains disabled unless `[diagrams].plantuml` is explicitly enabled in configuration and
 the `plantuml` executable is available on `PATH`. Trust by itself never opts into local process
-execution.
+execution, with one exception: the `open_in_editor` keybinding (`e` by default) launches `$EDITOR`
+on the current file regardless of trust state, since it reflects a choice the person at the keyboard
+makes directly, not document content. It carries the same risk as manually opening that file in your
+own editor — for example, an editor configured to auto-run project-local config (`.exrc`, certain
+`.vscode` settings) could execute something from the file's workspace. This is unrelated to trust
+and not something `mdglance` can mitigate; review a workspace with the same care you would before
+pointing any editor at it.
 
 ## Theme files
 

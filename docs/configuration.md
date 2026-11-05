@@ -229,6 +229,16 @@ action list and defaults are:
 | `reset_view` | `0` |
 | `manage_trust` | `Shift+T` |
 | `open_theme_picker` | `p` |
+| `open_in_editor` | `e` |
 | `quit` | `q`, plus `Cmd+W` and `Cmd+Q` on macOS |
+
+`open_in_editor` opens the current file in `$VISUAL` (or `$EDITOR`, falling back to `vi`) in the
+same terminal `mdglance` was launched from, then returns to the preview when the editor exits. It
+only works when `mdglance` is attached to a real terminal — not with `--detach` or when the file
+queue was supplied over a pipe.
+
+On macOS, Cmd+C (copy the current selection) and Cmd+A (select all) are also available. These are
+fixed native menu shortcuts, not part of `[keybindings]`, since the viewer has no other editing
+commands to bind them alongside.
 
 Press `?` inside `mdglance` to see the effective bindings.
