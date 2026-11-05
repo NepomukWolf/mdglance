@@ -56,6 +56,8 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
         event_loop.set_activation_policy(ActivationPolicy::Accessory);
         event_loop
     };
+    #[cfg(target_os = "macos")]
+    crate::macos::install_edit_menu();
     let proxy = event_loop.create_proxy();
     let mut watcher = watcher::watch_file(file.clone(), proxy)?;
     let mut current_file = file;

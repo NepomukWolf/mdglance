@@ -2,16 +2,55 @@ use std::ptr::NonNull;
 
 use block2::RcBlock;
 use objc2::{
-    MainThreadMarker,
+    MainThreadMarker, sel,
     rc::Retained,
     runtime::{AnyObject, NSObjectProtocol, ProtocolObject},
 };
 use objc2_app_kit::{
-    NSApplication, NSApplicationPresentationOptions, NSWindowDidEnterFullScreenNotification,
-    NSWindowDidExitFullScreenNotification,
+    NSApplication, NSApplicationPresentationOptions, NSMenu, NSMenuItem,
+    NSWindowDidEnterFullScreenNotification, NSWindowDidExitFullScreenNotification,
 };
-use objc2_foundation::{NSNotification, NSNotificationCenter};
+use objc2_foundation::{NSNotification, NSNotificationCenter, ns_string};
 use tao::{platform::macos::WindowExtMacOS, window::Window};
+
+/// Installs a minimal `Edit` menu so macOS routes Cmd+C/Cmd+A to the webview's
+/// native `copy:`/`selectAll:` responder actions. Without any app menu at all,
+/// those key equivalents have nowhere to go and are silently dropped.
+pub fn install_edit_menu() {
+    let app = application();
+    let mtm = MainThreadMarker::new()
+        .expect("macOS menu setup must happen on the main thread");
+
+    let copy_item = NSMenuItem::new(mtm);
+    copy_item.setTitle(ns_string!("Copy"));
+    copy_item.setKeyEquivalent(ns_string!("c"));
+    unsafe { copy_item.setAction(Some(sel!(copy:))) };
+
+    let select_all_item = NSMenuItem::new(mtm);
+    select_all_item.setTitle(ns_string!("Select All"));
+    select_all_item.setKeyEquivalent(ns_string!("a"));
+    unsafe { select_all_item.setAction(Some(sel!(selectAll:))) };
+
+    let edit_menu = NSMenu::new(mtm);
+    edit_menu.setTitle(ns_string!("Edit"));
+    edit_menu.addItem(&copy_item);
+    edit_menu.addItem(&select_all_item);
+
+    let edit_menu_item = NSMenuItem::new(mtm);
+    edit_menu_item.setSubmenu(Some(&edit_menu));
+
+    // AppKit always renames the title of the main menu's first item to the
+    // running process's name, so a placeholder application-menu item is
+    // needed here to keep that renaming from landing on the Edit menu.
+    let app_menu_item = NSMenuItem::new(mtm);
+    app_menu_item.setSubmenu(Some(&NSMenu::new(mtm)));
+
+    let main_menu = NSMenu::new(mtm);
+    main_menu.addItem(&app_menu_item);
+    main_menu.addItem(&edit_menu_item);
+
+    app.setMainMenu(Some(&main_menu));
+}
 
 pub struct FullscreenPresentation {
     normal_options: NSApplicationPresentationOptions,
