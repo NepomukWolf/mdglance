@@ -12,8 +12,8 @@ pub struct Args {
     #[arg(long)]
     pub detach: bool,
 
-    /// File to preview.
-    pub file: Option<PathBuf>,
+    /// File(s) to preview.
+    pub files: Vec<PathBuf>,
 
     /// Additional files in the viewer queue. Used internally for detached launches.
     #[arg(long, hide = true)]

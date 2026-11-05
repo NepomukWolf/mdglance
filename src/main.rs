@@ -22,10 +22,10 @@ fn main() -> Result<()> {
     let args = cli::Args::parse();
     let cli::Args {
         detach,
-        file,
+        files,
         queue_file,
     } = args;
-    let launch = resolve_launch_input(file, queue_file)?;
+    let launch = resolve_launch_input(files, queue_file)?;
 
     if detach {
         let mut command = Command::new(std::env::current_exe()?);
@@ -50,11 +50,12 @@ struct LaunchInput {
     queue: Vec<PathBuf>,
 }
 
-fn resolve_launch_input(file: Option<PathBuf>, queue: Vec<PathBuf>) -> Result<LaunchInput> {
-    if let Some(file) = file {
+fn resolve_launch_input(files: Vec<PathBuf>, queue_file: Vec<PathBuf>) -> Result<LaunchInput> {
+    let mut files = files.into_iter();
+    if let Some(file) = files.next() {
         let file = canonicalize_existing_file(&file)?;
-        let mut queue = queue
-            .into_iter()
+        let mut queue = files
+            .chain(queue_file)
             .map(|path| canonicalize_existing_file(&path))
             .collect::<Result<Vec<_>>>()?;
         queue.retain(|candidate| candidate != &file);
