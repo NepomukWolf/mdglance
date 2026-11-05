@@ -787,6 +787,35 @@ mod tests {
     }
 
     #[test]
+    fn security_sanitization_fixture_blocks_attacks_and_keeps_formatting() {
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/security-sanitization-check.md");
+        let source = std::fs::read_to_string(&fixture).expect("fixture file must exist");
+
+        let rendered = markdown_to_html(
+            &source,
+            fixture.parent().unwrap(),
+            fixture.parent().unwrap(),
+            true,
+            &Config::default(),
+        );
+
+        assert!(!rendered.body.contains("<script"));
+        assert!(!rendered.body.contains("onerror="));
+        assert!(!rendered.body.contains("onload="));
+        assert!(!rendered.body.contains("onmouseover="));
+        assert!(!rendered.body.contains("<iframe"));
+        assert!(!rendered.body.contains("javascript:alert"));
+        assert!(!rendered.body.contains("<form"));
+        assert!(!rendered.body.contains("UNSAFE"));
+
+        assert!(rendered.body.contains("<details>"));
+        assert!(rendered.body.contains("<summary>Click to expand</summary>"));
+        assert!(rendered.body.contains("<table>"));
+        assert!(rendered.body.contains("<blockquote>"));
+    }
+
+    #[test]
     fn restricted_document_has_csp_and_does_not_embed_mermaid_runtime() {
         let temp = std::env::temp_dir().join(format!(
             "mdglance-restricted-document-{}",
