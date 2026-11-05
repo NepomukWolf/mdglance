@@ -6,6 +6,7 @@ use pulldown_cmark::{
     CodeBlockKind, CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd, html,
 };
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use syntect::{html::ClassedHTMLGenerator, parsing::SyntaxSet, util::LinesWithEndings};
 
 use crate::{
@@ -17,6 +18,17 @@ use crate::{
 };
 
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
+static APP_JS_HASH: LazyLock<String> = LazyLock::new(|| csp_script_hash(assets::APP_JS));
+static MERMAID_JS_HASH: LazyLock<String> = LazyLock::new(|| csp_script_hash(assets::MERMAID_JS));
+
+/// A CSP `'sha256-...'` source expression for an inline script's exact text
+/// content, so trusted-mode's CSP can allow mdglance's own scripts without
+/// falling back to `'unsafe-inline'` (which would also permit anything a
+/// sanitizer bug let slip into author-supplied HTML).
+fn csp_script_hash(content: &str) -> String {
+    let digest = Sha256::digest(content.as_bytes());
+    format!("'sha256-{}'", general_purpose::STANDARD.encode(digest))
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RenderedContent {
@@ -70,8 +82,16 @@ pub fn render_document(
     } else {
         String::new()
     };
+    let bootstrap_script = format!(
+        "\n    window.__MDVIEW_MERMAID_SOURCE = {mermaid_js};\n    window.__MDGLANCE_CONFIG = {app_config};\n    window.__MDGLANCE_INITIAL_STATE = {initial_state};\n  "
+    );
     let csp = if trusted {
-        String::new()
+        let bootstrap_hash = csp_script_hash(&bootstrap_script);
+        let app_hash = APP_JS_HASH.as_str();
+        let mermaid_hash = MERMAID_JS_HASH.as_str();
+        format!(
+            r#"<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https: http: file:; style-src 'unsafe-inline'; script-src {bootstrap_hash} {app_hash} {mermaid_hash}; object-src 'none'; frame-src 'none'; form-action 'none';">"#
+        )
     } else {
         r#"<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">"#.to_string()
     };
@@ -136,11 +156,7 @@ pub fn render_document(
       </div>
     </div>
   </div>
-  <script>
-    window.__MDVIEW_MERMAID_SOURCE = {mermaid_js};
-    window.__MDGLANCE_CONFIG = {app_config};
-    window.__MDGLANCE_INITIAL_STATE = {initial_state};
-  </script>
+  <script>{bootstrap_script}</script>
   <script type="module">{app_js}</script>
 </body>
 </html>"#,
@@ -416,11 +432,11 @@ fn blocked_image<'a>(
 }
 
 fn restrict_author_html<'a>(event: Event<'a>, trusted: bool) -> Event<'a> {
-    if trusted {
-        return event;
-    }
     match event {
-        Event::Html(value) | Event::InlineHtml(value) => Event::Text(value),
+        Event::Html(value) | Event::InlineHtml(value) if !trusted => Event::Text(value),
+        Event::Html(value) | Event::InlineHtml(value) => {
+            Event::Html(CowStr::Boxed(ammonia::clean(&value).into_boxed_str()))
+        }
         other => other,
     }
 }
@@ -722,6 +738,52 @@ mod tests {
         assert!(matches!(rendered.document_kind, DocumentKind::Markdown));
         assert!(rendered.body.contains("&lt;svg&gt;"));
         assert!(!rendered.body.contains("<script>"));
+    }
+
+    #[test]
+    fn trusted_mode_sanitizes_dangerous_html_but_keeps_safe_formatting() {
+        let rendered = markdown_to_html(
+            concat!(
+                "<script>alert('x')</script>\n\n",
+                "<img src=\"x\" onerror=\"alert(1)\">\n\n",
+                "<iframe src=\"https://evil.example\"></iframe>\n\n",
+                "<a href=\"javascript:alert(1)\">click</a>\n\n",
+                "<details><summary>Click me</summary>Hidden content</details>\n\n",
+                "<table><tr><td>A</td></tr></table>",
+            ),
+            Path::new("."),
+            Path::new("."),
+            true,
+            &Config::default(),
+        );
+
+        assert!(!rendered.body.contains("<script"));
+        assert!(!rendered.body.contains("alert"));
+        assert!(!rendered.body.contains("onerror"));
+        assert!(!rendered.body.contains("<iframe"));
+        assert!(!rendered.body.contains("javascript:"));
+
+        assert!(rendered.body.contains("<details>"));
+        assert!(rendered.body.contains("<summary>Click me</summary>"));
+        assert!(rendered.body.contains("Hidden content"));
+        assert!(rendered.body.contains("<table>"));
+    }
+
+    #[test]
+    fn trusted_document_has_hash_based_csp_without_unsafe_inline_script() {
+        let temp =
+            std::env::temp_dir().join(format!("mdglance-trusted-document-{}", std::process::id()));
+        std::fs::create_dir_all(&temp).unwrap();
+        let file = temp.join("README.md");
+        std::fs::write(&file, "# Trusted preview").unwrap();
+
+        let html = render_document(&file, &temp, TrustState::Trusted, &Config::default()).unwrap();
+        assert!(html.contains("Content-Security-Policy"));
+        assert!(html.contains("script-src 'sha256-"));
+        assert!(!html.contains("script-src 'unsafe-inline'"));
+        assert!(html.contains("object-src 'none'"));
+        assert!(html.contains("frame-src 'none'"));
+        let _ = std::fs::remove_dir_all(temp);
     }
 
     #[test]
