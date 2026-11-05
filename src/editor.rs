@@ -1,6 +1,9 @@
-use std::path::Path;
+use std::{
+    path::Path,
+    process::{Child, Command},
+};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 fn parse_editor_command(command: &str) -> (String, Vec<String>) {
     let mut parts = command.split_whitespace().map(str::to_string);
@@ -15,19 +18,17 @@ fn resolve_editor_command() -> (String, Vec<String>) {
     parse_editor_command(&command)
 }
 
-#[cfg(unix)]
-pub fn open_in_editor(file: &Path) -> Result<()> {
-    use std::os::unix::process::CommandExt;
-    use std::process::Command;
-
+/// Spawns the editor without blocking. Callers must not wait on it from the
+/// main/UI thread: doing so freezes AppKit's run loop, which prevents any
+/// window-visibility or focus change from actually being applied until the
+/// child exits. Wait on the returned child from a background thread instead.
+pub fn spawn_editor(file: &Path) -> Result<Child> {
     let (program, args) = resolve_editor_command();
-    let err = Command::new(&program).args(&args).arg(file).exec();
-    Err(anyhow::Error::new(err).context(format!("failed to launch `{program}`")))
-}
-
-#[cfg(not(unix))]
-pub fn open_in_editor(_file: &Path) -> Result<()> {
-    anyhow::bail!("opening files in an external editor isn't supported on this platform yet")
+    Command::new(&program)
+        .args(&args)
+        .arg(file)
+        .spawn()
+        .with_context(|| format!("failed to launch `{program}`"))
 }
 
 #[cfg(test)]

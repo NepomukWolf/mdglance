@@ -41,6 +41,7 @@ pub enum UserEvent {
     CommitTheme(String),
     WatchError(String),
     OpenInEditor,
+    EditorExited,
 }
 
 pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
@@ -60,6 +61,7 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
     #[cfg(target_os = "macos")]
     crate::macos::install_edit_menu();
     let proxy = event_loop.create_proxy();
+    let editor_proxy = event_loop.create_proxy();
     let mut watcher = watcher::watch_file(file.clone(), proxy)?;
     let mut current_file = file;
     let mut current_watch_dir = current_file.parent().map(Path::to_path_buf);
@@ -241,11 +243,27 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
                 *control_flow = ControlFlow::Exit;
             }
             TaoEvent::UserEvent(UserEvent::OpenInEditor) => {
-                window.set_visible(false);
-                if let Err(err) = editor::open_in_editor(&current_file) {
-                    eprintln!("failed to open editor: {err}");
-                    window.set_visible(true);
+                match editor::spawn_editor(&current_file) {
+                    Ok(mut child) => {
+                        window.set_visible(false);
+                        #[cfg(target_os = "macos")]
+                        crate::macos::hide_app();
+                        let editor_proxy = editor_proxy.clone();
+                        std::thread::spawn(move || {
+                            let _ = child.wait();
+                            let _ = editor_proxy.send_event(UserEvent::EditorExited);
+                        });
+                    }
+                    Err(err) => {
+                        eprintln!("failed to open editor: {err}");
+                    }
                 }
+            }
+            TaoEvent::UserEvent(UserEvent::EditorExited) => {
+                #[cfg(target_os = "macos")]
+                crate::macos::unhide_and_activate_app();
+                window.set_visible(true);
+                window.set_focus();
             }
             TaoEvent::UserEvent(UserEvent::OpenExternal(url)) => {
                 if let Err(err) = open_external_url(&url) {

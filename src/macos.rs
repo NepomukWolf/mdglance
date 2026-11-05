@@ -2,9 +2,10 @@ use std::ptr::NonNull;
 
 use block2::RcBlock;
 use objc2::{
-    MainThreadMarker, sel,
+    MainThreadMarker,
     rc::Retained,
     runtime::{AnyObject, NSObjectProtocol, ProtocolObject},
+    sel,
 };
 use objc2_app_kit::{
     NSApplication, NSApplicationPresentationOptions, NSMenu, NSMenuItem,
@@ -18,8 +19,7 @@ use tao::{platform::macos::WindowExtMacOS, window::Window};
 /// those key equivalents have nowhere to go and are silently dropped.
 pub fn install_edit_menu() {
     let app = application();
-    let mtm = MainThreadMarker::new()
-        .expect("macOS menu setup must happen on the main thread");
+    let mtm = MainThreadMarker::new().expect("macOS menu setup must happen on the main thread");
 
     let copy_item = NSMenuItem::new(mtm);
     copy_item.setTitle(ns_string!("Copy"));
@@ -50,6 +50,23 @@ pub fn install_edit_menu() {
     main_menu.addItem(&edit_menu_item);
 
     app.setMainMenu(Some(&main_menu));
+}
+
+/// Hides the app (equivalent to Cmd+H) rather than just the window. On macOS,
+/// merely ordering a window out doesn't hand keyboard focus to anything else —
+/// the app can stay the "active" one with no visible window to receive input.
+/// Hiding the whole app deactivates it and returns focus to whatever was
+/// active immediately before it (the terminal mdg was launched from).
+pub fn hide_app() {
+    application().hide(None);
+}
+
+/// Reverses [`hide_app`]: unhides and reactivates mdg so its window is both
+/// visible and the one receiving keyboard input again.
+pub fn unhide_and_activate_app() {
+    let app = application();
+    app.unhide(None);
+    app.activate();
 }
 
 pub struct FullscreenPresentation {
