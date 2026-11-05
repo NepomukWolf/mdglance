@@ -80,6 +80,7 @@ pub enum Action {
     ResetView,
     ManageTrust,
     OpenThemePicker,
+    OpenInEditor,
     Quit,
 }
 
@@ -354,6 +355,7 @@ impl Action {
             Action::ResetView,
             Action::ManageTrust,
             Action::OpenThemePicker,
+            Action::OpenInEditor,
             Action::Quit,
         ]
     }
@@ -390,6 +392,7 @@ impl Action {
             "reset_view" => Action::ResetView,
             "manage_trust" => Action::ManageTrust,
             "open_theme_picker" => Action::OpenThemePicker,
+            "open_in_editor" => Action::OpenInEditor,
             "quit" => Action::Quit,
             _ => return None,
         })
@@ -427,15 +430,18 @@ impl Action {
             Action::ResetView => "reset_view",
             Action::ManageTrust => "manage_trust",
             Action::OpenThemePicker => "open_theme_picker",
+            Action::OpenInEditor => "open_in_editor",
             Action::Quit => "quit",
         }
     }
 
     fn scope(self) -> u8 {
         match self {
-            Action::Quit | Action::ShowHelp | Action::ToggleToc | Action::ManageTrust => {
-                SCOPE_GLOBAL
-            }
+            Action::Quit
+            | Action::ShowHelp
+            | Action::ToggleToc
+            | Action::ManageTrust
+            | Action::OpenInEditor => SCOPE_GLOBAL,
             Action::OpenThemePicker => {
                 SCOPE_GLOBAL
                     | SCOPE_DOCUMENT
@@ -532,6 +538,7 @@ fn default_keybindings() -> Vec<(Action, Vec<&'static str>)> {
         (Action::ResetView, vec!["0"]),
         (Action::ManageTrust, vec!["Shift+T"]),
         (Action::OpenThemePicker, vec!["p"]),
+        (Action::OpenInEditor, vec!["e"]),
         (Action::Quit, default_quit_bindings()),
     ]
 }

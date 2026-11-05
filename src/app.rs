@@ -18,7 +18,7 @@ use wry::WebViewBuilder;
 
 use crate::{
     config::{Action, Config},
-    render,
+    editor, render,
     theme::{ThemeCatalog, ThemeConfig},
     trust::{self, TrustState, TrustStore},
     watcher,
@@ -40,6 +40,7 @@ pub enum UserEvent {
     PreviewTheme(String),
     CommitTheme(String),
     WatchError(String),
+    OpenInEditor,
 }
 
 pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
@@ -138,6 +139,9 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
                         IpcMessage::CommitTheme { name } => {
                             let _ = proxy.send_event(UserEvent::CommitTheme(name));
                         }
+                        IpcMessage::OpenInEditor => {
+                            let _ = proxy.send_event(UserEvent::OpenInEditor);
+                        }
                     }
                 }
             }
@@ -235,6 +239,13 @@ pub fn run(file: PathBuf, queued_files: Vec<PathBuf>) -> Result<()> {
             }
             TaoEvent::UserEvent(UserEvent::Close) => {
                 *control_flow = ControlFlow::Exit;
+            }
+            TaoEvent::UserEvent(UserEvent::OpenInEditor) => {
+                window.set_visible(false);
+                if let Err(err) = editor::open_in_editor(&current_file) {
+                    eprintln!("failed to open editor: {err}");
+                    window.set_visible(true);
+                }
             }
             TaoEvent::UserEvent(UserEvent::OpenExternal(url)) => {
                 if let Err(err) = open_external_url(&url) {
@@ -439,6 +450,7 @@ enum IpcMessage {
     OpenThemePicker,
     PreviewTheme { name: String },
     CommitTheme { name: String },
+    OpenInEditor,
 }
 
 struct WorkspaceContext {

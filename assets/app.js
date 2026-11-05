@@ -101,6 +101,7 @@ const ACTIONS = [
   { id: "reset_view", description: "SVG: reset view" },
   { id: "manage_trust", description: "Open workspace trust controls" },
   { id: "open_theme_picker", description: "Choose a theme for this session" },
+  { id: "open_in_editor", description: "Open current file in $EDITOR" },
   { id: "quit", description: "Quit" },
 ];
 
@@ -116,8 +117,9 @@ const GLOBAL_ACTIONS = new Set([
   "close_overlay",
   "manage_trust",
   "open_theme_picker",
+  "open_in_editor",
 ]);
-const SEARCH_ACTIONS = new Set(["accept_search", "close_overlay", "quit"]);
+const SEARCH_ACTIONS = new Set(["accept_search", "close_overlay", "quit", "open_in_editor"]);
 const DOCUMENT_ACTIONS = new Set([
   "scroll_down",
   "scroll_up",
@@ -148,6 +150,7 @@ const HELP_ACTIONS = new Set([
   "show_help",
   "close_overlay",
   "quit",
+  "open_in_editor",
   "scroll_down",
   "scroll_up",
   "half_page_down",
@@ -1203,6 +1206,9 @@ function performAction(action) {
       return moveTocSelection(-1);
     case "activate_selection":
       return jumpToHeading(state.tocSelectionId, false);
+    case "open_in_editor":
+      sendIpc({ type: "open_in_editor" });
+      return true;
     case "quit":
       sendIpc({ type: "close" });
       return true;

@@ -3,6 +3,7 @@ mod assets;
 mod cli;
 mod config;
 mod diagrams;
+mod editor;
 #[cfg(target_os = "macos")]
 mod macos;
 mod render;
